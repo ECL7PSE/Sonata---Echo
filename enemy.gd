@@ -28,6 +28,8 @@ enum State { IDLE, WANDER, CHASE, ATTACK, HURT, DEAD }
 ## The player. Left null so a scene can be dropped in without wiring; the room
 ## trigger in 3B-2 sets it, and the tests set it directly.
 var player: Node2D = null
+## Where this enemy spawned. The leash sends it back here, not to the room centre.
+@export var home_position := Vector2.ZERO
 
 ## Enemies wait dormant until activate() so walking past a room does not start a
 ## fight the player chose to avoid.
@@ -52,13 +54,22 @@ var _body_h := 16.0
 @export var separation_push := 24.0
 @export var attack_range := 34.0
 
+## Boss modifiers, all in one place so the test can read the same numbers.
+const BOSS_SCALE := 1.15
+const BOSS_HP := 2.0
+const BOSS_DAMAGE := 1.2
+## Beyond this the enemy gives up and walks home. Sized so a room plus its
+## corridor fits inside it: leashing at exactly detect range would snap an enemy
+## back mid-chase the moment the player stepped into a doorway.
+@export var leash_range := 240.0
+
 var _state_time := 0.0
 var _cooldown := 0.0
 var _wander_dir := Vector2.ZERO
 var _wander_left := 0.0
-## One hit per swing: set on entry, cleared on exit. The player's hitbox is
-## disabled between swings, so a swing that lingers still lands exactly once.
-var _swing_hit := false
+## One hit per swing. The swing_id is the authority, not this flag: the flag only
+## exists to keep _last_swing_hit honest, and is re-armed by activate().
+var _last_swing_hit := -1
 var _flash_tween: Tween
 
 
@@ -81,10 +92,32 @@ func activate() -> void:
 	if active:
 		return
 	active = true
+	# A re-activated enemy must be able to be hit by whatever swing is in flight.
+	_last_swing_hit = -1
 	if state == State.IDLE:
 		state = State.WANDER
 		_state_time = 0.0
 	activated.emit()
+
+
+## Walks back to the spawn point and goes dormant again.
+##
+## The return is a state, not a teleport: snapping would let a player kite an
+## enemy across the room for free, and would look wrong.
+func _return_home() -> void:
+	_set_hitbox_active(false)
+	var away := home_position - global_position
+	if away.length() < 4.0:
+		global_position = home_position
+		velocity = Vector2.ZERO
+		active = false
+		_last_swing_hit = -1
+		_enter(State.IDLE)
+		return
+	away = away.normalized()
+	_face(away)
+	velocity = away * _speed()
+	_play("walk")
 func _ready() -> void:
 	super._ready()
 	if data.is_empty():
@@ -96,13 +129,23 @@ func _ready() -> void:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 	_sheets = data["sheets"]
+	if home_position == Vector2.ZERO:
+		home_position = position
+	# A boss is the same art, bigger, with more health and a heavier hit.
+	# The scale has to multiply the SHAPES too: scaling only the sprite would
+	# leave a 1.15x sprite with the small monster's hitbox, so the boss would
+	# look bigger and hit smaller.
 	_scale = float(data["scale"])
-	# A boss is the same art at twice the health.
-	max_health = int(data["hp"]) * (2 if boss else 1)
-	knockback_strength = 220.0
+	if boss:
+		_scale *= BOSS_SCALE
+		max_health = int(round(float(data["hp"]) * BOSS_HP))
+		invincibility_time = 0.35
+	else:
+		max_health = int(data["hp"])
+	invincibility_time = 0.25
+	knockback_strength = 260.0 if boss else 200.0
 	# Short enough that a lost exchange is survivable, long enough that a swarm
 	# cannot chain a single swing into an instant kill.
-	invincibility_time = 0.25
 
 	var body: Vector2i = data.get("body", Vector2i(16, 16))
 	_body_w = float(body.x) * _scale
@@ -205,11 +248,11 @@ func _set_hitbox_active(on: bool) -> void:
 
 func _facing_x() -> float:
 	return -1.0 if sprite.flip_h else 1.0
-## The player walked out of a hurtbox mid-swing: re-arm for the next one.
-func _on_hurtbox_area_exited(area: Area2D) -> void:
-	if area == null:
-		return
-	_swing_hit = false
+## The player walked out of a hurtbox: nothing to do, because the swing id
+## already decided it. Kept as a named no-op so the connection is not mistaken
+## for a missing behaviour.
+func _on_hurtbox_area_exited(_area: Area2D) -> void:
+	pass
 
 
 func _on_hurtbox_area_entered(area: Area2D) -> void:
@@ -218,13 +261,23 @@ func _on_hurtbox_area_entered(area: Area2D) -> void:
 	var owner_body := area.get_parent()
 	if owner_body == null or not owner_body.has_method("do_attack"):
 		return
-	if _swing_hit:
+	# One hit per SWING, decided by the swing's id rather than by whether this
+	# area happens to have emitted an enter event. An enemy standing inside a
+	# held-open hitbox gets one hit, and stays immune until a new swing id.
+	var id: int = owner_body.get("swing_id")
+	if id == _last_swing_hit:
 		return
-	_swing_hit = true
+	_last_swing_hit = id
 	var amount: int = owner_body.get("slash_damage")
 	if amount == 0:
 		amount = 2
 	take_damage(amount, area.global_position)
+
+
+## Re-arms the per-swing guard. The id, not the signal, decides - this only
+## exists so a fresh enemy has a value that cannot equal swing 0.
+func arm_for_first_swing() -> void:
+	_last_swing_hit = -1
 
 
 func _physics_process(delta: float) -> void:
@@ -253,6 +306,13 @@ func _physics_process(delta: float) -> void:
 	var dist := to_target.length()
 	_face(to_target)
 
+	# The leash. A fight you can walk away from is not a fight; an enemy that
+	# chases forever turns every room into a corridor sprint. Past the leash the
+	# enemy walks home and goes dormant again, so the room can be re-entered.
+	if state != State.IDLE and dist > leash_range:
+		_return_home()
+		return
+
 	match state:
 		State.IDLE:
 			velocity = Vector2.ZERO
@@ -270,7 +330,9 @@ func _physics_process(delta: float) -> void:
 			# swing is handled by _on_frame_changed.
 			velocity = velocity.move_toward(Vector2.ZERO, 700.0 * delta)
 			if not sprite.is_playing():
-				_cooldown = 1.0
+				# Read from the database, not a literal: a per-species cadence is a
+				# data change, not a code change.
+				_cooldown = float(data.get("attack_cooldown", 1.0))
 				_enter(State.CHASE)
 	_move()
 
@@ -361,7 +423,15 @@ func _strike_at(target: Node2D) -> void:
 	if target == null or state == State.DEAD:
 		return
 	if target.has_method("take_damage"):
-		target.take_damage(int(data.get("damage", 1)) * 2, global_position)
+		target.take_damage(damage_amount(), global_position)
+
+
+## Damage in half-hearts, doubled for the game's 2-per-heart scale.
+func damage_amount() -> int:
+	var raw := float(data.get("damage", 1))
+	if boss:
+		raw *= BOSS_DAMAGE
+	return int(round(raw)) * 2
 
 
 func _strike() -> void:

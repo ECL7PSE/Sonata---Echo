@@ -228,14 +228,14 @@ func _generate(body: Dictionary, tables: Array) -> void:
 	_write_db(scales, offsets, sizes)
 ## the measured one, so the file is generated rather than transcribed.
 const STATS := {
-"rat": {"hp": 4, "dmg": 1, "spd": 86.0, "coins": [1, 3]},
-"slime": {"hp": 6, "dmg": 1, "spd": 78.0, "coins": [1, 3]},
-"bat": {"hp": 6, "dmg": 1, "spd": 108.0, "coins": [1, 3]},
-"mushroom": {"hp": 8, "dmg": 2, "spd": 82.0, "coins": [1, 3]},
-"flying_eye": {"hp": 8, "dmg": 2, "spd": 104.0, "coins": [1, 3]},
-"goblin": {"hp": 10, "dmg": 2, "spd": 94.0, "coins": [1, 3]},
-"mimic": {"hp": 14, "dmg": 3, "spd": 90.0, "coins": [3, 6]},
-"skeleton": {"hp": 20, "dmg": 3, "spd": 96.0, "coins": [6, 10]},
+"rat": {"hp": 4, "dmg": 1, "spd": 86.0, "coins": [1, 3], "cd": 0.7},
+"slime": {"hp": 6, "dmg": 1, "spd": 78.0, "coins": [1, 3], "cd": 0.9},
+"bat": {"hp": 6, "dmg": 1, "spd": 108.0, "coins": [1, 3], "cd": 0.6},
+"mushroom": {"hp": 8, "dmg": 2, "spd": 82.0, "coins": [1, 3], "cd": 1.0},
+"flying_eye": {"hp": 8, "dmg": 2, "spd": 104.0, "coins": [1, 3], "cd": 0.8},
+"goblin": {"hp": 10, "dmg": 2, "spd": 94.0, "coins": [1, 3], "cd": 1.0},
+"mimic": {"hp": 14, "dmg": 3, "spd": 90.0, "coins": [3, 6], "cd": 1.1},
+"skeleton": {"hp": 20, "dmg": 3, "spd": 96.0, "coins": [6, 10], "cd": 1.2},
 }
 const DETECT_RANGE := 120.0
 const ATTACK_COOLDOWN := 1.0
@@ -270,6 +270,8 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary) -> vo
 		out.append("\t\"speed\": %.1f," % float(s["spd"]))
 		out.append("\t\"coin_min\": %d," % int(s["coins"][0]))
 		out.append("\t\"coin_max\": %d," % int(s["coins"][1]))
+		out.append("\t\"attack_cooldown\": %.2f," % float(s.get("cd", 1.0)))
+		out.append("\t\"detect_range\": %.1f," % DETECT_RANGE)
 		out.append("\t\"scale\": %.4f," % float(scales[monster]))
 		out.append("\t\"body\": Vector2i(%d, %d),   # visible body, source px"
 				% [int(sizes[monster].x), int(sizes[monster].y)])
@@ -306,6 +308,18 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary) -> vo
 		names.append(monster.to_upper())
 	out.append("## Every monster key.")
 	out.append("const ALL := [%s]" % ", ".join(names))
+	# A lookup by name, because GDScript cannot resolve a const by string at
+	# runtime and every consumer wants to ask for "the goblin" by key.
+	var rows: Array[String] = []
+	for monster in STATS.keys():
+		rows.append("\t\t\"%s\": %s," % [monster, monster.to_upper()])
+	out.append("")
+	out.append("")
+	out.append("## Key string -> the monster's dictionary.")
+	out.append("const BY_KEY := {")
+	for r in rows:
+		out.append(r)
+	out.append("}")
 	var f := FileAccess.open("res://monster_db.gd", FileAccess.WRITE)
 	f.store_string("\n".join(out))
 	f.close()

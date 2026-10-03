@@ -47,6 +47,7 @@ const PROP_SCRIPT := preload("res://prop_breakable.gd")
 const LOOT_SCRIPT := preload("res://loot.gd")
 const TORCH_SCRIPT := preload("res://torch.gd")
 const TRAP_SCRIPT := preload("res://trap.gd")
+const SPAWNER := preload("res://enemy_spawner.gd")
 
 const GRID := 16            # tile size in source pixels
 const SCALE := 2.0         # the Dungeon node is scaled 2x, see dungeon.tscn
@@ -1070,16 +1071,61 @@ func _place_traps(hazards: Node2D, grid: Array) -> void:
 
 ## A Marker2D at the centre of every hall, so enemy spawning has somewhere to
 ## aim. The markers are positions only - no enemies are spawned yet.
+## Populates EnemySpawns: one Marker2D per enemy, and one trigger per monster
+## room.
+##
+## The markers are the dungeon builder's single source of truth for placement,
+## which is what lets check_layout.gd assert the spawn rules without having to
+## re-derive them or trust the enemy nodes at runtime.
 func _place_enemy_spawns() -> void:
 	var spawns := Node2D.new()
 	spawns.name = "EnemySpawns"
 	add_child(spawns)
+	var triggers := Node2D.new()
+	triggers.name = "RoomTriggers"
+	add_child(triggers)
+
+	# What a spawn must keep away from, read from the nodes that were ACTUALLY
+	# placed rather than from the const lists they came from. Torches in
+	# particular are seeded at placement time and have no cell list to copy, and
+	# a spawn rule that silently skipped them would be a rule nobody could see.
+	var blocked := _blocked_cells()
+
+	var start := _room_centre(ROOM_HALL)
 	for room_name in ROOMS:
-		var marker := Marker2D.new()
-		marker.name = "Spawn_%s" % room_name
-		marker.position = _cell_centre(_room_centre(ROOMS[room_name]))
-		spawns.add_child(marker)
+		if not SPAWNER.is_enemy_room(room_name):
+			continue
+		var key := SPAWNER.monster_key(room_name)
+		var cells := SPAWNER.plan(func(c: Vector2i) -> bool:
+				return _walkable(_grid, c), ROOMS[room_name], room_name,
+				blocked, start)
+		for cell in cells:
+			var marker := Marker2D.new()
+			marker.name = "Spawn_%s_%d_%d" % [room_name, cell.x, cell.y]
+			marker.position = _cell_centre(cell)
+			spawns.add_child(marker)
+		triggers.add_child(SPAWNER.make_trigger(ROOMS[room_name], room_name))
+		print("spawn %-11s %-12s %d enemy/enemies" % [room_name, key, cells.size()])
 # --- Node factories --------------------------------------------------------
+
+## The cells occupied by anything a spawn must avoid: every trap, chest, pot,
+## crate and torch that made it into the tree.
+func _blocked_cells() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for holder_name in ["Props", "Hazards"]:
+		var holder := get_node_or_null(holder_name)
+		if holder == null:
+			continue
+		for child in holder.get_children():
+			if child is Node2D:
+				out.append(_cell_at((child as Node2D).position))
+	return out
+
+
+## The cell whose centre a source-pixel position falls in.
+func _cell_at(pos: Vector2) -> Vector2i:
+	return Vector2i(int(floor(pos.x / GRID)), int(floor(pos.y / GRID)))
+
 
 func _make_chest(cell: Vector2i) -> Area2D:
 	var node := Area2D.new()

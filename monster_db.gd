@@ -22,6 +22,8 @@ const RAT := {
 	"speed": 86.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 0.70,
+	"detect_range": 120.0,
 	"scale": 2.0000,
 	"body": Vector2i(40, 20),   # visible body, source px
 	"sheets": {
@@ -70,6 +72,8 @@ const SLIME := {
 	"speed": 78.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 0.90,
+	"detect_range": 120.0,
 	"scale": 2.2222,
 	"body": Vector2i(44, 18),   # visible body, source px
 	"sheets": {
@@ -117,6 +121,8 @@ const BAT := {
 	"speed": 108.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 0.60,
+	"detect_range": 120.0,
 	"scale": 1.2121,
 	"body": Vector2i(54, 33),   # visible body, source px
 	"sheets": {
@@ -166,6 +172,8 @@ const MUSHROOM := {
 	"speed": 82.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 1.00,
+	"detect_range": 120.0,
 	"scale": 1.0811,
 	"body": Vector2i(23, 37),   # visible body, source px
 	"sheets": {
@@ -214,6 +222,8 @@ const FLYING_EYE := {
 	"speed": 104.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 0.80,
+	"detect_range": 120.0,
 	"scale": 1.2903,
 	"body": Vector2i(41, 31),   # visible body, source px
 	"sheets": {
@@ -263,6 +273,8 @@ const GOBLIN := {
 	"speed": 94.0,
 	"coin_min": 1,
 	"coin_max": 3,
+	"attack_cooldown": 1.00,
+	"detect_range": 120.0,
 	"scale": 1.2222,
 	"body": Vector2i(33, 36),   # visible body, source px
 	"sheets": {
@@ -309,6 +321,8 @@ const MIMIC := {
 	"speed": 90.0,
 	"coin_min": 3,
 	"coin_max": 6,
+	"attack_cooldown": 1.10,
+	"detect_range": 120.0,
 	"scale": 1.0000,
 	"body": Vector2i(16, 15),   # visible body, source px
 	"sheets": {
@@ -384,6 +398,8 @@ const SKELETON := {
 	"speed": 96.0,
 	"coin_min": 6,
 	"coin_max": 10,
+	"attack_cooldown": 1.20,
+	"detect_range": 120.0,
 	"scale": 0.9412,
 	"body": Vector2i(45, 51),   # visible body, source px
 	"sheets": {
@@ -427,3 +443,16 @@ const SKELETON := {
 
 ## Every monster key.
 const ALL := [RAT, SLIME, BAT, MUSHROOM, FLYING_EYE, GOBLIN, MIMIC, SKELETON]
+
+
+## Key string -> the monster's dictionary.
+const BY_KEY := {
+		"rat": RAT,
+		"slime": SLIME,
+		"bat": BAT,
+		"mushroom": MUSHROOM,
+		"flying_eye": FLYING_EYE,
+		"goblin": GOBLIN,
+		"mimic": MIMIC,
+		"skeleton": SKELETON,
+}

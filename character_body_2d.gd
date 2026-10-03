@@ -284,9 +284,19 @@ func _animate_walk(delta):
 ## buffing the sword is a single change here.
 @export var slash_damage := 2
 
+## Incremented once per swing, and never reused.
+##
+## Enemies remember the last swing_id that connected and ignore a repeat from the
+## same one. That replaces relying on the attack shape being toggled between
+## swings, which is an accident of the current timing rather than a rule: if the
+## shape ever stayed enabled across two frames, one swing could chew through a
+## whole enemy's health.
+var swing_id := 0
+
 func do_attack():
 	is_attacking = true
 	velocity = Vector2.ZERO
+	swing_id += 1
 
 	var col := _get_dir_col(last_direction)
 
