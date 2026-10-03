@@ -260,9 +260,16 @@ func _check_leash_reengage() -> void:
 	## the near distance is correct behaviour and should not fail the test.
 func _check_no_oscillation() -> void:
 	const FRAMES := 1200
-	const LEASH := 40.0
-	var distances := {"inside": LEASH * 0.6, "just beyond": LEASH * 1.5,
-			"far beyond": LEASH * 8.0}
+	const REAL_LEASH := 240.0
+	const DETECT := 120.0
+	# 0.25x is the only distance that is unambiguously inside BOTH the leash and
+	# the detect radius. 0.5x of a 240px leash is exactly 120px, which IS the
+	# detect range - an enemy sitting at home will not notice a player standing
+	# precisely on its detection boundary, so that case must NOT be required to
+	# engage or the test would be asserting the wrong thing.
+	var distances := {"inside both": REAL_LEASH * 0.25,
+			"on detect edge": REAL_LEASH * 0.5,
+			"just beyond": REAL_LEASH * 1.05, "far beyond": REAL_LEASH * 1.6}
 	for label in ["rat", "mimic"]:
 		for where in distances.keys():
 			var gap: float = distances[where]
@@ -272,47 +279,75 @@ func _check_no_oscillation() -> void:
 				_run(e, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
 						+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME
 						+ MARGIN)
-			e.leash_range = LEASH
+			e.leash_range = REAL_LEASH
 			e.activate()
-			# Park the player beyond the leash so it walks home and settles.
-			_player.global_position = e.home_position + Vector2(5000, 0)
-			for i in 4000:
+			# Settle at home first, so the window starts from the state a leashed
+			# enemy is actually in.
+			_player.global_position = e.home_position + Vector2(9000, 0)
+			for i in 6000:
 				e._physics_process(1.0 / 60.0)
 				if not e.active:
 					break
 			_ok(not e.active, "%s/%s never settled at home" % [label, where])
-			# Now hold the player at the test distance for the long window.
 			_player.global_position = e.home_position + Vector2(gap, 0)
+			var engagements := 0
 			var leash_returns := 0
+			var engaged_once := false
 			var was_active: bool = e.active
 			for i in FRAMES:
+				_player.global_position = e.home_position + Vector2(gap, 0)
 				e._physics_process(1.0 / 60.0)
 				if e.has_method("_process"):
 					e._process(1.0 / 60.0)
+				# A real engagement is CHASE or ATTACK, not merely "active".
+				if e.state == MIMIC_SCRIPT.State.CHASE \
+						or e.state == MIMIC_SCRIPT.State.ATTACK:
+					engaged_once = true
 				if e.active and not was_active:
-					pass
+					engagements += 1
 				elif was_active and not e.active:
 					leash_returns += 1
 				was_active = e.active
+			# PRECONDITION. Without this a case where the enemy never moved
+			# reports zero leash returns and passes vacuously. The rule is
+			# distance-dependent, because an enemy at home simply cannot notice
+			# a player outside its detect radius - "did not engage" is the CORRECT
+			# result there, not a void.
+			var must_engage: bool = gap < DETECT
+			if must_engage:
+				_ok(engaged_once,
+					"%s at %s (%dpx, inside detect) never engaged"
+							% [label, where, int(gap)])
+			else:
+				_ok(not engaged_once,
+					"%s at %s (%dpx, outside detect) engaged anyway"
+							% [label, where, int(gap)])
 			_ok(leash_returns <= 1,
-				"%s at %s leash distance: %d chase-return cycles in %d frames"
-						% [label, where, leash_returns, FRAMES])
-			print("no oscillation : %-6s player %-11s %6.0fpx out -> %d cycles"
-					% [label, where, gap, leash_returns])
-	# The beyond-leash case must stay asleep even after the delay expires.
+				"%s at %s (%dpx): %d leash returns in %d frames"
+						% [label, where, int(gap), leash_returns, FRAMES])
+			print("no oscillation : %-6s %-11s %5.0fpx engaged=%-5s "
+					% [label, where, gap, str(engaged_once)]
+					+ "engagements=%d leash_returns=%d"
+							% [engagements, leash_returns])
+	# The beyond-leash case must stay asleep even after the delay expires, and it
+	# must be a REAL leash with a REAL distance: 1.05x of 240 = 252px, which is
+	# still inside the 120px detect radius measured from an enemy that has drifted
+	# toward the player. A 40px leash made this case trivially safe.
 	var e2 := _make_rat()
-	e2.leash_range = 40.0
+	e2.leash_range = 240.0
 	e2.activate()
-	_player.global_position = e2.home_position + Vector2(5000, 0)
-	for i in 4000:
+	_player.global_position = e2.home_position + Vector2(9000, 0)
+	for i in 6000:
 		e2._physics_process(1.0 / 60.0)
 		if not e2.active:
 			break
-	_player.global_position = e2.home_position + Vector2(60, 0)
-	for i in 1200:
+	_player.global_position = e2.home_position + Vector2(252, 0)
+	for i in 1800:
+		_player.global_position = e2.home_position + Vector2(252, 0)
 		e2._physics_process(1.0 / 60.0)
 	_ok(not e2.active,
-		"an enemy re-engaged on detect range alone, 60px beyond its leash of home")
+		"an enemy re-engaged on detect range alone, 252px (1.05x leash) from home")
+	print("no oscillation : beyond-leash stays asleep at 252px (1.05x of 240)")
 
 
 ## Several mimics bursting at once must not stack past the single amplitude.

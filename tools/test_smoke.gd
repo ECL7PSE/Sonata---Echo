@@ -15,7 +15,9 @@ const FRAMES_PER_ROOM := 300
 
 ## Real-physics oscillation: how many leash returns are acceptable in the window.
 const LIVE_FRAMES := 600
-const LIVE_LEASH := 40.0
+## The REAL leash, and a distance that is genuinely just beyond it.
+const LIVE_LEASH := 240.0
+const LIVE_GAP := 252.0
 const LIVE_MAX_RETURNS := 2
 const MIMIC_SCRIPT := preload("res://mimic.gd")
 const MONSTER_DB := preload("res://monster_db.gd")
@@ -72,6 +74,7 @@ func _process(_delta: float) -> bool:
 			_frames -= 1
 			if _frames <= 0:
 				_bounds_and_walls()
+				_check_leash()
 				_check_live_oscillation()
 				_report()
 				return true
@@ -176,31 +179,47 @@ func _check_live_oscillation() -> void:
 		e.leash_range = LIVE_LEASH
 		e.activate()
 		# Send it home once, so the cooldown is armed the way it would be in play.
-		_player.global_position = e.home_position + Vector2(5000, 0)
-		for i in 4000:
+		_player.global_position = e.home_position + Vector2(9000, 0)
+		for i in 6000:
 			e._physics_process(1.0 / 60.0)
 			if not e.active:
 				break
+		_ok(not e.active, "%s never settled before the live window" % label)
 		# Now hold the player just beyond the leash, and let physics run.
-		_player.global_position = e.home_position + Vector2(LIVE_LEASH * 1.6, 0)
 		var returns := 0
+		var engagements := 0
+		var engaged_once := false
 		var was_active: bool = e.active
 		for i in LIVE_FRAMES:
 			# The player's own _physics_process would move it from input; keeping
-			# it parked means the position above is the one under test.
-			_player.global_position = e.home_position \
-					+ Vector2(LIVE_LEASH * 1.6, 0)
+			# it parked means the position below is the one under test.
+			_player.global_position = e.home_position + Vector2(LIVE_GAP, 0)
 			e._physics_process(1.0 / 60.0)
 			if e.has_method("_process"):
 				e._process(1.0 / 60.0)
-			if was_active and not e.active:
+			# A real engagement is CHASE or ATTACK, not merely "active".
+			if e.state == 2 or e.state == 3:
+				engaged_once = true
+			if e.active and not was_active:
+				engagements += 1
+			elif was_active and not e.active:
 				returns += 1
 			was_active = e.active
+		# PRECONDITION. An enemy at home cannot notice a player outside its
+		# detect radius, so "did not engage" is CORRECT there, not a void.
+		if LIVE_GAP < 120.0:
+			_ok(engaged_once, "%s never engaged inside detect range" % label)
+		else:
+			_ok(not engaged_once,
+				"%s engaged from %dpx away, outside its %dpx detect range"
+						% [label, int(LIVE_GAP), 120])
 		_ok(returns <= LIVE_MAX_RETURNS,
 			"%s looped under live physics: %d leash returns in %d frames"
 					% [label, returns, LIVE_FRAMES])
-		print("live oscillation: %-6s %d leash returns in %d live frames"
-				% [label, returns, LIVE_FRAMES])
+		print("live oscillation: %-6s gap=%3.0fpx engaged=%-5s "
+				% [label, LIVE_GAP, str(engaged_once)]
+				+ "engagements=%d leash_returns=%d"
+						% [engagements, returns])
 
 
 func _spawn_live(data: Dictionary, at: Vector2, script) -> Node2D:
