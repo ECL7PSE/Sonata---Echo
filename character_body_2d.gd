@@ -1,14 +1,75 @@
 extends CharacterBody2D
 
 @export var speed := 200.0
-@export var attack_frame_time := 0.05  
-@export var idle_frame_time := 0.15    
-@export var walk_frame_time := 0.1     
+@export var attack_frame_time := 0.05
+@export var idle_frame_time := 0.15
+@export var walk_frame_time := 0.1
 
 @onready var icon: Sprite2D = $"Icon(Sprite2D)"
 @onready var attack_area: Area2D = $"AttackArea(Area2D)"
 @onready var attack_shape: CollisionShape2D = $"AttackArea(Area2D)/CollisionShape2D"
 @onready var slash_effect: Sprite2D = $"AttackArea(Area2D)/SlashEffect(Sprite2D)"
+@onready var camera: Camera2D = $"Camera2D"
+
+
+## Moves the player onto the dungeon builder's PlayerStart marker.
+##
+## The marker is the ONLY source of truth for the spawn. An earlier version
+## hardcoded a position in Main.tscn, which put the player on cell (9,24) while
+## the hall centre - the obvious "centre of the first room" - is cell (10,25).
+## Two copies of the same fact drift apart the moment a room is nudged.
+##
+## The camera smoothing is reset afterwards on purpose. Smoothing interpolates
+## from wherever the camera already was, so snapping the body from the scene's
+## default (0,0) would slide the view across the map on the first frames.
+func snap_to_player_start() -> void:
+	var dungeon := _find_dungeon()
+	if dungeon == null:
+		return
+	var marker := dungeon.get_node_or_null("PlayerStart") as Marker2D
+	if marker == null:
+		push_warning("player: no PlayerStart marker found, leaving spawn as-is")
+		return
+	global_position = marker.global_position
+	velocity = Vector2.ZERO
+	if camera != null:
+		camera.reset_smoothing()
+
+
+## The Dungeon node.
+##
+## The Dungeon is the player's SIBLING under the Main root, not its ancestor, so
+## this searches downward from the common parent. Walking up from the player
+## never finds it - it goes from Player to the root and stops.
+func _find_dungeon() -> Node2D:
+	var parent := get_parent()
+	if parent != null:
+		var sibling := parent.get_node_or_null("Dungeon")
+		if sibling is Node2D:
+			return sibling as Node2D
+	# Fall back to a tree walk, so this still works if the player is ever nested.
+	return _search_tree(get_tree().root) if get_tree() != null else null
+
+
+func _search_tree(node: Node) -> Node2D:
+	if node == null:
+		return null
+	if node.name == "Dungeon" and node is Node2D:
+		return node as Node2D
+	for child in node.get_children():
+		var found := _search_tree(child)
+		if found != null:
+			return found
+	return null
+
+
+## Movement penalties currently applied, keyed by the source that set them
+## (a trap's instance id), e.g. {"@Area2D_42": 0.45}.
+##
+## A source adds itself on entry and removes itself on exit, so the speed returns
+## to normal by itself once the last slow lets go. Nothing has to remember to
+## call a reset.
+var _speed_scales: Dictionary = {}
 
 
 var idle_texture := preload("res://Assets/Player/Dark_Hatman_Topdown_Character/Animations/Idle/darkhatman_idle_sheet_64x64.png")
@@ -32,7 +93,10 @@ var anim_frame := 0
 var anim_timer := 0.0
 
 func _ready():
-	
+	# Take the spawn from the dungeon's PlayerStart marker before anything else,
+	# so the very first physics frame already happens at the right place.
+	snap_to_player_start()
+
 	attack_area.position = Vector2.ZERO
 	attack_shape.position = Vector2(0, ATTACK_HITBOX_DISTANCE)
 	attack_shape.disabled = true
@@ -57,7 +121,7 @@ func _physics_process(delta):
 		return
 
 	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	velocity = direction * speed
+	velocity = direction * current_speed()
 	move_and_slide()
 
 	if direction != Vector2.ZERO:
@@ -75,6 +139,41 @@ func _get_dir_col(dir: Vector2) -> int:
 		return 2 if dir.x > 0 else 3
 	else:
 		return 1 if dir.y < 0 else 0
+
+## Applies a named movement multiplier. Called by hazards such as trap.gd when
+## the player steps into them. Re-applying the same source refreshes it rather
+## than stacking with itself, so standing in one trap is not slower than standing
+## in the same trap twice.
+func add_speed_scale(source: String, factor: float) -> void:
+	_speed_scales[source] = clampf(factor, 0.0, 1.0)
+
+
+## Drops a penalty applied earlier by add_speed_scale. When the last one is
+## dropped the multiplier goes back to 1.0, so the player is never left slow.
+func remove_speed_scale(source: String) -> void:
+	_speed_scales.erase(source)
+
+
+## True when nothing is holding the player back.
+func is_normal_speed() -> bool:
+	return _speed_scales.is_empty()
+
+
+## The movement speed right now.
+##
+## Overlapping hazards do NOT multiply - the STRONGEST active slow wins, and the
+## others are simply ignored until it lets go. Multiplying looked tempting but
+## breaks in practice: the player collider is 43x67 px while a tile is 32 px, so
+## stepping onto a three-tile spike strip overlaps all three traps at once. At
+## 0.45 each that is 0.09x - effectively frozen, which reads as a bug rather
+## than a hazard. Taking the minimum caps the penalty at one trap's worth, which
+## is both predictable and fair.
+func current_speed() -> float:
+	var scale := 1.0
+	for factor in _speed_scales.values():
+		scale = minf(scale, float(factor))
+	return speed * scale
+
 
 func _animate_idle(delta):
 	if icon.texture != idle_texture:
