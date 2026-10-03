@@ -24,14 +24,28 @@ static var _frames: SpriteFrames
 ##
 ## The parent is where the coins are added, so the caller decides whether they
 ## land in the world or in some container.
-static func drop(parent: Node, origin: Vector2, count: int, radius := 34.0) -> void:
+## `origin` is in GLOBAL space; the coins are placed in the parent's LOCAL space.
+##
+## These are not the same thing here. The Dungeon node is scaled 2x, so a coin
+## parented to Dungeon/Props and given a global position is drawn at DOUBLE its
+## world position - which is how coins ended up off in the wall band, apparently
+## invisible, while every old test still passed because it only checked that a
+## coin node existed with a collider.
+static func drop(parent: Node, origin: Vector2, count: int,
+		radius := 34.0) -> void:
 	if parent == null or count <= 0:
 		return
+	var local: Vector2 = parent.to_local(origin)
 	for i in count:
 		var coin := Area2D.new()
 		coin.set_script(COIN_SCRIPT)
 		coin.name = "Coin%d" % i
-		coin.position = origin
+		coin.position = local
+		# Above the floor and props, below nothing that matters. Without this the
+		# coin drew behind the dungeon layers and looked like it had not spawned.
+		coin.z_index = 40
+		coin.modulate = Color(1, 1, 1, 1)
+		coin.visible = true
 		# A fan, not a ring: a full circle of coins looks like an explosion, and
 		# half of them land behind the thing that dropped them.
 		var t: float = float(i) / maxf(float(count - 1), 1.0) - 0.5

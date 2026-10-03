@@ -29,10 +29,46 @@ var _checks := 0
 
 
 func _initialize() -> void:
+	_check_scale_rule()
 	_check_animations_present()
 	_check_mimic_matches_chest()
 	_check_all_anchored()
 	_report()
+
+
+## Monsters are sized against the PLAYER, not the tile.
+##
+## For every species, the LARGER of body width and height, times its scale, must
+## equal the player's measured visible height times that species' multiple. This
+## replaced an informal "1 to 1.5 tiles" band that no test actually asserted -
+## it lived only as a target in the generator, so nothing would have caught a
+## species drifting out of scale.
+func _check_scale_rule() -> void:
+	var player_h: float = DB.PLAYER_H
+	_ok(player_h > 1.0,
+		"the player measures %.2fpx tall, which cannot be right" % player_h)
+	print("player height  : %.2f px (measured from its own sprite)" % player_h)
+	for key in DATA:
+		var data: Dictionary = DATA[key]
+		var lower: String = key.to_lower()
+		_ok(DB.BODY_MULT.has(lower),
+			"%s has no BODY_MULT entry" % key)
+		var mult := float(DB.BODY_MULT[lower])
+		var body: Vector2i = data["body"]
+		var scale := float(data["scale"])
+		var longest := maxf(float(body.x), float(body.y)) * scale
+		var target := player_h * mult
+		_ok(absf(longest - target) <= 0.05,
+			"%s longest visible dimension is %.2fpx, expected %.2fpx "
+			% [key, longest, target]
+			+ "(%.2fx player)" % mult)
+		print("scale %-12s %.4f  body %dx%d -> %.1fx%.1f on screen  (%.2fx player)"
+				% [key, scale, body.x, body.y,
+				float(body.x) * scale, float(body.y) * scale, mult])
+	# The dormant mimic is exempt: it IS a chest and stays pixel-identical.
+	var dormant: Dictionary = DB.MIMIC["sheets"]["dormant"]
+	_ok(float(DB.MIMIC["dormant_scale"]) == 1.0,
+		"the dormant mimic must stay 1:1 with the real chest")
 
 
 func _ok(condition: bool, message: String) -> bool:

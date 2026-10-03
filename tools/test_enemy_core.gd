@@ -418,6 +418,99 @@ func _attack_area() -> Area2D:
 
 
 ## Position of `key` in DATA, so a test can find its spawned enemy.
+## Spawns one of each species and kills them, then lets the ENGINE run.
+##
+## The old death test called _on_death_finished() by hand, which proved the
+## function worked and nothing about whether it was ever CALLED. That is exactly
+## how a looping death animation shipped: the cleanup existed, was correct, and
+## never fired. This one waits on real frames.
+func _begin_real_death() -> void:
+	_dead.clear()
+	_drops.clear()
+	var x := 160.0
+	for key in DATA:
+		var e := _fresh_enemy(key)
+		e.position = Vector2(x, 240.0)
+		e.global_position = Vector2(x, 240.0)
+		e.leash_range = 100000.0
+		x += 50.0
+		e.health = 1
+		e._iframe_left = 0.0
+		e.take_damage(5, e.global_position + Vector2(0, -10))
+		_dead.append({"key": key, "node": e,
+				"coins": _count_coins_deep(), "freed": false, "drops": 0})
+	_orphan_check = _dungeon_enemies().size()
+
+
+func _deaths_pending() -> bool:
+	for d in _dead:
+		if is_instance_valid(d["node"]):
+			return true
+	return false
+
+
+func _check_real_death() -> void:
+	var freed := 0
+	var drop_failures: Array[String] = []
+	for d in _dead:
+		var node: Node2D = d["node"]
+		var key: String = d["key"]
+		if is_instance_valid(node):
+			drop_failures.append("%s was never freed" % key)
+			continue
+		freed += 1
+		var dropped := _count_coins_deep() - int(d["coins"])
+		# Ranges from monster_db, so this is the real payout, not a fixed number.
+		var lo := int(DATA[key]["coin_min"])
+		var hi := int(DATA[key]["coin_max"])
+		if dropped < lo or dropped > hi:
+			drop_failures.append("%s dropped %d coins, expected %d..%d"
+					% [key, dropped, lo, hi])
+	_ok(freed == _dead.size(),
+		"%d of %d species never freed their corpse" % [_dead.size() - freed,
+		_dead.size()])
+	for f in drop_failures:
+		_ok(false, str(f))
+	print("real death     : %d/%d freed within ~7s of real frames, coins ok"
+			% [freed, _dead.size()])
+
+
+var _dead: Array = []
+var _drops: Array = []
+var _orphan_check := 0
+
+
+func _dungeon_enemies() -> Array:
+	var out: Array = []
+	for e in get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			out.append(e)
+	return out
+
+
+## Counts every coin anywhere under Main, whatever dropped it.
+func _count_coins_deep() -> int:
+	var script := preload("res://coin.gd")
+	var n := 0
+	var stack: Array = _main.get_children()
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		# Freed nodes linger in a container's child list for the rest of the
+		# frame; touching one throws "invalid previously freed instance".
+		if not is_instance_valid(node):
+			continue
+		if node.get_script() == script:
+			n += 1
+		stack.append_array(node.get_children())
+	return n
+
+
+## Coins left behind by a dead corpse would pile up in the room.
+func _check_no_orphan_coins() -> void:
+	var live := _count_coins()
+	print("coins alive    : %d after every corpse was freed" % live)
+
+
 func _index_of(key: String) -> int:
 	var i := 0
 	for k in DATA:
@@ -431,12 +524,18 @@ func _index_of(key: String) -> int:
 ##
 ## Counted by SCRIPT, not by name: Godot renames a duplicate node name on
 ## add_child, so a second drop's coins arrive as "@Area2D@41" and a name-based
-## count silently reads them as "no coins dropped".
+## count silently reads them as "no coins dropped". Shallow: chest coins land
+## under Dungeon/Props, which is a grandchild of Main.
 func _count_coins() -> int:
+	var script := preload("res://coin.gd")
 	var n := 0
 	for child in _main.get_children():
-		if child.get_script() == preload("res://coin.gd"):
+		if child.get_script() == script:
 			n += 1
+		elif child is Node:
+			for c in child.get_children():
+				if c.get_script() == script:
+					n += 1
 	return n
 
 

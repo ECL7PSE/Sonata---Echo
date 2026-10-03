@@ -250,7 +250,10 @@ func _check_leash() -> void:
 		# leash is supposed to prove. Tested with `in` because a plain Enemy has
 		# no `chain` property, and two separate preloads of mimic.gd are not
 		# guaranteed to be the same Script resource to compare against.
-		if "chain" in enemy and int(enemy.get("chain")) == 0:
+		# Skip EVERY mimic, not just dormant ones. A leashed mimic is correct
+		# code with a different activation path, and asserting the generic
+		# leash on it proves the wrong thing.
+		if "chain" in enemy:
 			continue
 		pool.append(enemy)
 	if pool.is_empty():

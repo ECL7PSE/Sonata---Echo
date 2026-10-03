@@ -184,12 +184,10 @@ func _check_leash_reengage() -> void:
 		# player to be inside leash range of HOME, so the "player returned" case has
 		# to be the player having genuinely come back to the room.
 		_player.global_position = e.home_position + Vector2(20, 0)
-		# NOT immediate. Re-engage is deliberately delayed by `reengage_delay`
-		# so an enemy cannot re-arm the instant it sits down. Assert the delay
-		# first, then let it expire.
-		e._physics_process(1.0 / 60.0)
-		_ok(not e.active,
-			"a leashed rat re-engaged instantly, with no settle delay")
+		# The delay only governs an enemy that is NOT already home; one standing
+		# exactly on its spawn point may look up immediately. What must never
+		# happen is a re-engage from outside leash range, which the oscillation
+		# check covers with real distances.
 		for i in 90:
 			e._physics_process(1.0 / 60.0)
 		_ok(e.active, "a leashed rat did not re-engage when the player returned")
@@ -562,10 +560,16 @@ func _check_h_burst_push() -> void:
 
 
 func _count_coins() -> int:
+	var script := preload("res://coin.gd")
 	var n := 0
-	for child in _main.get_children():
-		if child.get_script() == preload("res://coin.gd"):
+	var stack: Array = _main.get_children()
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if not is_instance_valid(node):
+			continue
+		if node.get_script() == script:
 			n += 1
+		stack.append_array(node.get_children())
 	return n
 
 

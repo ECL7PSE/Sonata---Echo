@@ -15,6 +15,21 @@ extends RefCounted
 const DETECT_RANGE := 120.0
 const ATTACK_COOLDOWN := 1.0
 
+## The player's visible body height on screen, measured from its sprite.
+const PLAYER_H := 51.6000
+## Target visible size per species, as a multiple of PLAYER_H, applied
+## to the LARGER of body width and height.
+const BODY_MULT := {
+	"rat": 1.00,
+	"slime": 1.00,
+	"bat": 1.00,
+	"mushroom": 1.00,
+	"flying_eye": 1.00,
+	"goblin": 1.00,
+	"mimic": 1.20,
+	"skeleton": 1.30,
+}
+
 ## rat
 const RAT := {
 	"hp": 4,
@@ -24,7 +39,7 @@ const RAT := {
 	"coin_max": 3,
 	"attack_cooldown": 0.70,
 	"detect_range": 120.0,
-	"scale": 2.0000,
+	"scale": 1.2900,
 	"body": Vector2i(40, 20),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -74,7 +89,7 @@ const SLIME := {
 	"coin_max": 3,
 	"attack_cooldown": 0.90,
 	"detect_range": 120.0,
-	"scale": 2.2222,
+	"scale": 1.1727,
 	"body": Vector2i(44, 18),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -123,7 +138,7 @@ const BAT := {
 	"coin_max": 3,
 	"attack_cooldown": 0.60,
 	"detect_range": 120.0,
-	"scale": 1.2121,
+	"scale": 0.9556,
 	"body": Vector2i(54, 33),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -174,7 +189,7 @@ const MUSHROOM := {
 	"coin_max": 3,
 	"attack_cooldown": 1.00,
 	"detect_range": 120.0,
-	"scale": 1.0811,
+	"scale": 1.3946,
 	"body": Vector2i(23, 37),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -224,7 +239,7 @@ const FLYING_EYE := {
 	"coin_max": 3,
 	"attack_cooldown": 0.80,
 	"detect_range": 120.0,
-	"scale": 1.2903,
+	"scale": 1.2585,
 	"body": Vector2i(41, 31),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -275,7 +290,7 @@ const GOBLIN := {
 	"coin_max": 3,
 	"attack_cooldown": 1.00,
 	"detect_range": 120.0,
-	"scale": 1.2222,
+	"scale": 1.4333,
 	"body": Vector2i(33, 36),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -323,7 +338,7 @@ const MIMIC := {
 	"coin_max": 6,
 	"attack_cooldown": 1.10,
 	"detect_range": 120.0,
-	"scale": 1.6000,
+	"scale": 1.4743,
 	"body": Vector2i(42, 30),   # visible body, source px
 	# Dormant profile: the real chest, drawn 1:1.
 	"dormant_scale": 1.0,
@@ -403,7 +418,7 @@ const SKELETON := {
 	"coin_max": 10,
 	"attack_cooldown": 1.20,
 	"detect_range": 120.0,
-	"scale": 0.9412,
+	"scale": 1.3153,
 	"body": Vector2i(45, 51),   # visible body, source px
 	"sheets": {
 		"idle": {

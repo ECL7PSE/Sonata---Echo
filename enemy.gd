@@ -76,9 +76,19 @@ var _has_been_activated := false
 ## Seconds before a leashed enemy may re-engage on sight. Armed when it reaches
 ## home and counted down in _physics_process.
 @export var reengage_delay := 1.0
+## Global size knob, applied on top of the database scale. Every species can be
+## resized from the inspector without regenerating monster_db.gd.
+@export var ENEMY_SCALE_MULT := 1.0
 var _reengage_left := 0.0
 
 var _last_swing_hit := -1
+## Death bookkeeping. _dead_handled makes the two cleanup paths idempotent;
+## _coins_dropped is a second guard at the payout itself, so a coin drop can
+## never happen twice however the cleanup was reached.
+var _dead_handled := false
+var _coins_dropped := false
+## How long the death animation is expected to run, for the safety Timer.
+var _death_length := 0.0
 var _flash_tween: Tween
 
 
@@ -153,7 +163,7 @@ func _ready() -> void:
 	# The scale has to multiply the SHAPES too: scaling only the sprite would
 	# leave a 1.15x sprite with the small monster's hitbox, so the boss would
 	# look bigger and hit smaller.
-	_scale = float(data["scale"])
+	_scale = float(data["scale"]) * ENEMY_SCALE_MULT
 	if boss:
 		_scale *= BOSS_SCALE
 		max_health = int(round(float(data["hp"]) * BOSS_HP))
@@ -221,6 +231,11 @@ func _build_animations() -> void:
 		var fw: int = sheet["frame_size"].x
 		var fh: int = sheet["frame_size"].y
 		frames.add_animation(anim)
+		# ONLY idle and walk loop. A looping animation never emits
+		# animation_finished, so a looping death meant the corpse stayed on screen
+		# for ever and never paid out. Same for attack and hurt, whose "finished"
+		# edge is what returns the enemy to its chase.
+		frames.set_animation_loop(anim, anim == "idle" or anim == "walk")
 		for i in int(sheet["frames"]):
 			var at := AtlasTexture.new()
 			at.atlas = atlas
@@ -572,13 +587,52 @@ func _die() -> void:
 	sprite.animation_finished.connect(_on_death_finished, CONNECT_ONE_SHOT)
 	if not sprite.is_playing():
 		_on_death_finished()
+		return
+	# SAFETY NET. animation_finished is the normal path, but it silently never
+	# fires if anything re-loops the death animation or the sprite is paused,
+	# and then the corpse stands in the room for ever. A timer guarantees the
+	# payout and the free. _dead_handled makes the two paths idempotent, so
+	# coins can only ever drop once.
+	var frames_n := int(sprite.sprite_frames.get_frame_count("death"))
+	var fps: float = sprite.sprite_frames.get_animation_speed("death")
+	if fps <= 0.0:
+		fps = 12.0
+	var length := float(frames_n) / fps + 0.5
+	var timer := Timer.new()
+	timer.name = "DeathSafety"
+	timer.one_shot = true
+	timer.wait_time = length
+	timer.timeout.connect(_on_death_finished)
+	add_child(timer)
+	timer.start()
+	_death_length = length
 
 
+## The one and only death cleanup. Both the animation_finished path and the
+## safety Timer call this, so it is idempotent: coins drop exactly once.
 func _on_death_finished() -> void:
+	if _dead_handled:
+		return
 	if state != State.DEAD:
 		return
-	_drop_coins()
-	queue_free()
+	_dead_handled = true
+	var timer := get_node_or_null("DeathSafety")
+	if timer != null:
+		timer.queue_free()
+	# Coins are paid out BEFORE the cosmetic fade. A fade is a tween, and a
+	# tween needs frames - so paying out after it meant the loot did not appear
+	# until the corpse had finished fading, and never at all in a test that
+	# stepped no frames.
+	if not _coins_dropped:
+		_coins_dropped = true
+		_drop_coins()
+	# Short fade so the corpse does not vanish mid-frame. Purely cosmetic.
+	if is_inside_tree():
+		var fade := create_tween()
+		fade.tween_property(sprite, "modulate:a", 0.0, 0.4)
+		fade.tween_callback(queue_free)
+	else:
+		queue_free()
 
 
 ## Spawns the payout through the SAME helper the chests use, so a dead enemy and

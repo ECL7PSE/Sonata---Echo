@@ -20,6 +20,54 @@ extends SceneTree
 
 const BASE := "res://Assets/Monsters_Creatures_Fantasy/"
 
+## The player's idle sheet and the Sprite2D scale it is drawn at, from
+## Main.tscn. Monsters are sized against the PLAYER, not the tile: a rat that is
+## "1.5 tiles tall" can still dwarf the character it is chasing.
+const PLAYER_SHEET := "res://Assets/Player/Dark_Hatman_Topdown_Character/Animations/Idle/darkhatman_idle_sheet_64x64.png"
+const PLAYER_CELL := 64
+## Main.tscn sets the player Sprite2D to scale 1.2.
+const PLAYER_SCALE := 1.2
+
+## One knob for every monster size. Exported on the enemy so it can be tuned
+## without regenerating the database.
+## One knob for every monster size, applied on top of the measured scale.
+## Mirrors Enemy.ENEMY_SCALE_MULT so the two can be tuned together.
+static var ENEMY_SCALE_MULT := 1.0
+
+
+## The player's visible body height on screen, measured from its own sprite.
+##
+## Never hardcoded: the player art or its scale can change, and a stale constant
+## here would silently resize the entire bestiary.
+static func player_visible_height() -> float:
+	var img: Image = (load(PLAYER_SHEET) as Texture2D).get_image()
+	# Scanned inline rather than via _bbox(), which is an instance method.
+	var min_y := 999999
+	var max_y := -1
+	for y in PLAYER_CELL:
+		for x in PLAYER_CELL:
+			if img.get_pixel(x, y).a > 0.0:
+				min_y = mini(min_y, y)
+				max_y = maxi(max_y, y)
+	if max_y < 0:
+		return 48.0
+	return float(max_y - min_y + 1) * PLAYER_SCALE
+
+
+## Target visible size as a multiple of the PLAYER's visible height, applied to
+## the LARGER of each monster's body width and height.
+##
+## Using max(width, height) rather than height alone is what stops a wide, flat
+## creature like the bat or the rat from being scaled by its height and ending
+## up several times the player's width.
+const BODY_MULT := {
+	"rat": 1.0, "slime": 1.0, "bat": 1.0, "mushroom": 1.0,
+	"flying_eye": 1.0, "goblin": 1.0,
+	"mimic": 1.2,
+	"skeleton": 1.3,
+}
+
+
 ## The dormant pose is the real chest at 1:1. Both figures come from
 ## measure_sheets.gd's own pixel scan of C001_01, not from this comment.
 const MIMIC_CHEST_W := 16
@@ -184,10 +232,11 @@ func _generate(body: Dictionary, tables: Array) -> void:
 			dormant["mimic"] = Vector2i(MIMIC_CHEST_W, MIMIC_CHEST_H)
 		var bw := float(b.z - b.x + 1)
 		var bh := float(b.w - b.y + 1)
-		# Every species now scales off its measured body against the same tile
-		# band, including the mimic: its BODY sheet is the awake pose, so it gets
-		# a creature's proportions and not the chest's.
-		var scale: float = float(BODY_H[monster]) / bh
+		# Sized against the PLAYER, not the tile: the LARGER body dimension is
+		# scaled to the player's visible height times this species' multiple.
+		var target: float = player_visible_height() \
+				* float(BODY_MULT[monster]) * ENEMY_SCALE_MULT
+		var scale: float = target / maxf(bw, bh)
 		print("")
 		print("%-12s body %dx%d px -> %.1fx%.1f on screen  scale %.4f"
 				% [monster, int(bw), int(bh), bw * scale, bh * scale, scale])
@@ -267,6 +316,19 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary, dorma
 	out.append("## Shared behaviour numbers.")
 	out.append("const DETECT_RANGE := %.1f" % DETECT_RANGE)
 	out.append("const ATTACK_COOLDOWN := %.1f" % ATTACK_COOLDOWN)
+	# The sizing rule, so the test can verify it instead of trusting the numbers.
+	out.append("")
+	out.append("## The player's visible body height on screen, measured from its sprite.")
+	out.append("const PLAYER_H := %.4f" % player_visible_height())
+	out.append("## Target visible size per species, as a multiple of PLAYER_H, applied")
+	out.append("## to the LARGER of body width and height.")
+	out.append("const BODY_MULT := {")
+	var mrows: Array[String] = []
+	for monster in STATS.keys():
+		mrows.append("\t\"%s\": %.2f," % [monster, float(BODY_MULT[monster])])
+	for r in mrows:
+		out.append(r)
+	out.append("}")
 	out.append("")
 	for monster in STATS.keys():
 		var s: Dictionary = STATS[monster]
