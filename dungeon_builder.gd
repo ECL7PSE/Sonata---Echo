@@ -382,7 +382,13 @@ const TRAPS: Array[Vector2i] = [
 	# they can be stepped around and never sit flush against a wall cap.
 	Vector2i(33, 35), Vector2i(36, 38),      # eye_well
 	Vector2i(22, 35), Vector2i(26, 35), Vector2i(23, 38),   # goblin_den
-	Vector2i(15, 35), Vector2i(12, 38),      # mimic_den
+	# mimic_den. (12,38) moved to (11,34): the awake mimic is 2.1 tiles wide, so
+	# its only legal spot in an 8x7 room is the bottom row against the wall below,
+	# and a trap at (12,38) reserves x=11..13 of exactly that row - it cut the
+	# room to two of its three mimics. (11,34) is the same room, the same
+	# distance from its chest, leaves the bottom row clear, and keeps the one-cell
+	# clearance the trap rule requires (x=10 was flush against the west band).
+	Vector2i(15, 35), Vector2i(11, 34),      # mimic_den
 ]
 
 const TP_FRAMES := 14
@@ -1084,6 +1090,7 @@ func _place_enemy_spawns() -> void:
 	var triggers := Node2D.new()
 	triggers.name = "RoomTriggers"
 	add_child(triggers)
+	_place_mimics(spawns)
 
 	# What a spawn must keep away from, read from the nodes that were ACTUALLY
 	# placed rather than from the const lists they came from. Torches in
@@ -1118,6 +1125,41 @@ func _place_enemy_spawns() -> void:
 				% [room_name, key, cells.size(),
 				" (last is the boss)" if room_name == "bone_hall" else ""])
 # --- Node factories --------------------------------------------------------
+
+## Lays out the dormant Mimics, beside their chests and against a wall.
+##
+## They are parented to the SAME Props node the chests live in, which is what
+## makes them sort and light identically: Props carries the z_index, and a
+## mimic built anywhere else would draw behind the floor or in front of the wall
+## cap. The sprite keeps the default material so the dungeon lights still reach
+## it, exactly as they reach a real chest.
+func _place_mimics(spawns: Node2D) -> void:
+	var props := get_node_or_null("Props")
+	if props == null:
+		return
+	var walkable := func(c: Vector2i) -> bool: return _walkable(_grid, c)
+	var blocked := _blocked_cells()
+	var start := _room_centre(ROOM_HALL)
+	for room_name in SPAWNER.MIMIC_DENS:
+		var spec: Dictionary = SPAWNER.MIMIC_DENS[room_name]
+		var chest: Vector2i = spec["chest"]
+		var want: int = int(spec["count"])
+		var cells := SPAWNER.plan_mimic(walkable, ROOMS[room_name], chest,
+				want, blocked, start)
+		for i in cells.size():
+			var cell: Vector2i = cells[i]
+			var m := SPAWNER.make_mimic(_cell_centre(cell), room_name,
+					"Cell_%d_%d" % [cell.x, cell.y])
+			props.add_child(m)
+			# Belt and braces: the spawner already leaves these unset, but a
+			# dormant mimic that sorts differently from a real chest gives the
+			# disguise away the instant the player walks behind it.
+			m.z_index = 0
+			m.y_sort_enabled = false
+		print("spawn %-11s MIMIC         %d/%d dormant (chest %s, clearance %.1fpx)"
+				% [room_name, cells.size(), want, chest,
+				SPAWNER.mimic_wall_clearance_px()])
+
 
 ## The cells a spawn must avoid: traps, chests and crates.
 ##

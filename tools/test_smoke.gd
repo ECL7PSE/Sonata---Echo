@@ -243,8 +243,16 @@ func _check_leash() -> void:
 	# and move the player far away.
 	var pool: Array = []
 	for enemy in get_nodes_in_group("enemies"):
-		if is_instance_valid(enemy):
-			pool.append(enemy)
+		if not is_instance_valid(enemy):
+			continue
+		# Skip dormant mimics. They REFUSE activation by design - that is the
+		# whole disguise - so picking one here asserted the opposite of what the
+		# leash is supposed to prove. Tested with `in` because a plain Enemy has
+		# no `chain` property, and two separate preloads of mimic.gd are not
+		# guaranteed to be the same Script resource to compare against.
+		if "chain" in enemy and int(enemy.get("chain")) == 0:
+			continue
+		pool.append(enemy)
 	if pool.is_empty():
 		_ok(false, "no enemies exist, so the leash is untested")
 		return

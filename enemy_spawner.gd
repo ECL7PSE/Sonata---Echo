@@ -19,6 +19,7 @@ class_name EnemySpawner
 const ENEMY_SCENE := preload("res://enemy.tscn")
 const ENEMY_SCRIPT := preload("res://enemy.gd")
 const DB := preload("res://monster_db.gd")
+const MIMIC_SCRIPT := preload("res://mimic.gd")
 
 ## Room name -> the monster that lives there. The hall and shaft are absent on
 ## purpose: those are the safe route and they must stay empty.
@@ -61,6 +62,112 @@ const MIMIC_CHEST_H := 15
 static var PROPS: Array[Vector2i] = []
 ## The Dungeon node is scaled 2x, so one source tile is 32 screen pixels.
 const SCREEN_PX_PER_TILE := 32.0
+
+
+## Rooms that get dormant Mimics, and the real chest each one hides beside.
+##
+## The mimic is placed relative to a chest on purpose: a dormant mimic IS a
+## chest, so a player who has learned to loot this dungeon should be reading the
+## room as "three chests here", not "three enemies here".
+const MIMIC_DENS: Dictionary = {
+	"mimic_den": {"chest": Vector2i(14, 37), "count": 3},
+	"crypt": {"chest": Vector2i(25, 10), "count": 1},
+}
+## How close to its chest a mimic may stand, in tiles. Four reads as a group.
+const MIMIC_NEAR_TILES := 4
+
+
+## The awake mimic's half-width, on screen, from monster_db.
+static func awake_half_width() -> float:
+	var body: Vector2i = DB.MIMIC.get("body", Vector2i(16, 15))
+	return float(body.x) * float(DB.MIMIC["scale"]) * 0.5
+
+
+## Wall clearance a mimic needs, computed rather than hardcoded.
+##
+## max(24px, awake half-width + 4px). The awake body is the binding constraint
+## and it is much bigger than the 16x15 chest it starts as: at scale 1.6 the
+## mimic is 67.2px wide, so a placement that only clears the 24px floor rule
+## would stand the creature's shoulder inside a wall the moment it wakes.
+static func mimic_wall_clearance_px() -> float:
+	return maxf(WALL_CLEARANCE_PX, awake_half_width() + 4.0)
+
+
+## Picks `count` dormant-mimic cells hugging a wall beside `chest`.
+##
+## "Beside a chest and against a wall" is the whole disguise, so the wall
+## constraint is inverted from the normal spawn rule: instead of being pushed
+## away from walls, these MUST have one nearby, while still having enough clear
+## floor for the awake body. The cell is floor, all four neighbours are floor
+## (a corner is fine, a gap is not), and the body rectangle is checked cell by
+## cell.
+static func plan_mimic(walkable: Callable, room: Rect2i, chest: Vector2i,
+		count: int, blocked: Array[Vector2i],
+		player_start: Vector2i) -> Array[Vector2i]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = room_seed("mimic_" + str(chest))
+	# Convert the awake body to TILES, which is the grid's unit.
+	var half_tiles := awake_half_width() / SCREEN_PX_PER_TILE
+	var height_tiles := float(DB.MIMIC.get("body", Vector2i(16, 15)).y) \
+			* float(DB.MIMIC["scale"]) / SCREEN_PX_PER_TILE
+	var out: Array[Vector2i] = []
+	for _attempt in 800:
+		if out.size() >= count:
+			break
+		var cell := chest + Vector2i(
+			rng.randi_range(-MIMIC_NEAR_TILES, MIMIC_NEAR_TILES),
+			rng.randi_range(-MIMIC_NEAR_TILES, MIMIC_NEAR_TILES))
+		if not room.has_point(cell):
+			continue
+		if Vector2(cell - chest).length() > MIMIC_NEAR_TILES:
+			continue
+		if not bool(walkable.call(cell)):
+			continue
+		# Near a wall: at least one orthogonal neighbour is not floor.
+		var against := false
+		for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if not bool(walkable.call(cell + d)):
+				against = true
+		if not against:
+			continue
+		# But the AWAKE body must still fit, measured against the grid rather
+		# than assumed from the clearance number.
+		if not _body_fits(walkable, cell, half_tiles, height_tiles):
+			continue
+		if _screen_distance(cell, player_start) < SPAWN_CLEARANCE_PX:
+			continue
+		if _near_any(cell, blocked, PROP_CLEARANCE_PX):
+			continue
+		if _near_any(cell, out, SCREEN_PX_PER_TILE):
+			continue
+		out.append(cell)
+	return out
+
+
+## True when the awake body rectangle standing on `cell` covers only floor.
+##
+## The node origin is the body's bottom-centre, so the rect runs from
+## (centre - half, centre - height) to (centre + half, centre).
+##
+## The halves arrive in TILES, not pixels. The grid is indexed by cell and the
+## first version passed the awake half-width (33.6px) straight into a tile
+## space, so the rect spanned 67 TILES and could never fit - which is why both
+## rooms silently placed zero mimics while the run still went green.
+static func _body_fits(walkable: Callable, cell: Vector2i, half: float,
+		height: float) -> bool:
+	var centre := Vector2(cell) + Vector2(0.5, 0.5)
+	var left := centre.x - half
+	var top := centre.y - height
+	var right := centre.x + half
+	var bottom := centre.y
+	# Every cell the rectangle touches, including partial ones at the edges.
+	var from := Vector2i(floori(left), floori(top))
+	var to := Vector2i(floori(right - 0.001), floori(bottom - 0.001))
+	for y in range(from.y, to.y + 1):
+		for x in range(from.x, to.x + 1):
+			if not bool(walkable.call(Vector2i(x, y))):
+				return false
+	return true
 
 
 static func set_props(cells: Array[Vector2i]) -> void:
@@ -226,6 +333,27 @@ static func _walkable(grid: Array, cell: Vector2i) -> bool:
 			or cell.y >= grid.size():
 		return false
 	return grid[cell.y][cell.x]
+## Builds a dormant Mimic at a cell centre, parented by the caller.
+##
+## The player is left null on purpose: a mimic resolves it itself, and passing
+## it here would hand every mimic a reference to a node the builder does not own.
+static func make_mimic(cell_centre: Vector2, room_name: String,
+		suffix: String) -> Node2D:
+	var e: Node2D = ENEMY_SCENE.instantiate()
+	e.set_script(MIMIC_SCRIPT)
+	e.data = DB.MIMIC
+	e.position = cell_centre
+	e.home_position = cell_centre
+	e.name = "Mimic_%s_%s" % [room_name, suffix]
+	# Default material, like a real chest: a CanvasItemMaterial would opt the
+	# sprite out of the dungeon's PointLight2D lights and it would read as
+	# unlit stone next to a glowing chest.
+	var sprite := e.get_node_or_null("Sprite") as Sprite2D
+	if sprite != null:
+		sprite.material = null
+	return e
+
+
 ## Builds one enemy at `cell_centre`, already anchored on its ground contact point.
 static func make_enemy(key: String, cell_centre: Vector2, room_name: String,
 		player: Node2D, is_boss := false) -> Node2D:

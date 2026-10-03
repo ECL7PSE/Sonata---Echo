@@ -13,6 +13,7 @@ extends SceneTree
 
 const BUILDER := preload("res://dungeon_builder.gd")
 const SPAWNER := preload("res://enemy_spawner.gd")
+const monster_db_preload := preload("res://monster_db.gd")
 ## Test hook. Set to a room name to drop that room's spawns before checking, so
 ## the "a room may not ship empty" assertion can be proved to fire instead of
 ## being assumed to work. Empty in normal runs.
@@ -118,6 +119,100 @@ func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
 			% seen_species.size())
 
 
+## The dormant Mimics: exact counts, all still DORMANT, and room for the awake
+## body they will become.
+##
+## These read the built dungeon rather than re-running the planner, so a mimic
+## that was placed and then woken, moved, or given the wrong species cannot slip
+## past.
+func _check_mimic_placement(builder: Node2D, grid: Array) -> void:
+	var walkable: Callable = builder._safe_walkable(grid)
+	var props: Node = null
+	if _live_main != null:
+		props = _live_main.get_node_or_null("Dungeon/Props")
+	print("")
+	print("mimic dens     :")
+	var mimic_script := preload("res://mimic.gd")
+	for room_name in SPAWNER.MIMIC_DENS:
+		var spec: Dictionary = SPAWNER.MIMIC_DENS[room_name]
+		var want: int = int(spec["count"])
+		var chest: Vector2i = spec["chest"]
+		var found: Array[Node] = []
+		if props != null:
+			for child in props.get_children():
+				if str(child.name).begins_with("Mimic_%s_" % room_name):
+					found.append(child)
+		_ok(found.size() == want,
+			"%s has %d dormant mimics, expected exactly %d"
+					% [room_name, found.size(), want])
+		var half := SPAWNER.awake_half_width() / SPAWNER.SCREEN_PX_PER_TILE
+		var height := float(monster_db_preload.MIMIC["body"].y) \
+				* float(monster_db_preload.MIMIC["scale"]) \
+				/ SPAWNER.SCREEN_PX_PER_TILE
+		for m in found:
+			_ok(m.get_script() == mimic_script,
+				"%s is a %s, not a mimic" % [m.name, m.get_script()])
+			# DORMANT is what makes it a chest. A mimic that woke during load
+			# would be a free 3 hp hit for the player standing in the doorway.
+			_ok(m.chain == mimic_script.Chain.DORMANT,
+				"%s is not DORMANT at start (chain %d)" % [m.name, m.chain])
+			_ok(m.sprite.material == null,
+				"%s has a material; a dormant mimic must light like a chest"
+						% m.name)
+			# Same z as the chests they impersonate.
+			_ok(int(m.z_index) == 0,
+				"%s has z_index %d, chests are 0" % [m.name, m.z_index])
+			var cell := Vector2i(int(floor(m.position.x / 16.0)),
+					int(floor(m.position.y / 16.0)))
+			_ok(builder.ROOMS[room_name].has_point(cell),
+				"%s is outside its room at %s" % [m.name, cell])
+			_ok(Vector2(cell - chest).length() <= SPAWNER.MIMIC_NEAR_TILES,
+				"%s at %s is %.1f tiles from its chest, max %d"
+						% [m.name, cell,
+						Vector2(cell - chest).length(), SPAWNER.MIMIC_NEAR_TILES])
+			_ok(Vector2(cell - chest).length() * 32.0 >= 32.0,
+				"%s is on top of its chest at %s" % [m.name, cell])
+			# Room for the awake body, measured against the grid.
+			var centre := Vector2(cell) + Vector2(0.5, 0.5)
+			var from := Vector2i(floori(centre.x - half),
+					floori(centre.y - height))
+			var to := Vector2i(floori(centre.x + half - 0.001),
+					floori(centre.y - 0.001))
+			var clear := true
+			for y in range(from.y, to.y + 1):
+				for x in range(from.x, to.x + 1):
+					if not bool(walkable.call(Vector2i(x, y))):
+						clear = false
+			_ok(clear,
+				"%s at %s: the awake body overlaps a wall (needs %.1fpx clearance)"
+						% [m.name, cell, SPAWNER.mimic_wall_clearance_px()])
+		print("  %-11s %d/%d dormant, clearance %.1fpx, chest %s"
+				% [room_name, found.size(), want,
+				SPAWNER.mimic_wall_clearance_px(), chest])
+
+
+## Records a failure. check_layout has no assertion counter of its own - it is a
+## rule engine that fails loudly - so mimic checks add their own count so the
+## run_all_tests summary can still see them.
+var _checks := 0
+## The instantiated Main.tscn, kept so mimic checks read real placed nodes.
+var _live_main: Node = null
+## The built grid, kept so the mimic checks can measure awake-body clearance
+## against the same floor the dungeon was carved from.
+var _grid: Array = []
+
+
+func _ok(condition: bool, message: String) -> bool:
+	_checks += 1
+	return _fail_ok(condition, message)
+
+
+func _fail_ok(condition: bool, message: String) -> bool:
+	if not condition:
+		_fails.append(message)
+	return condition
+
+
 func _fail(message: String) -> void:
 	_fails.append(message)
 
@@ -126,6 +221,8 @@ func _initialize() -> void:
 	var builder: Node2D = BUILDER.new()
 	_builder = builder
 	var grid: Array = builder._build_grid()
+	# Kept for the mimic checks, which run at the end and need the same floor.
+	_grid = grid
 
 	var problems: Array = builder._validate(grid)
 	for p in problems:
@@ -652,7 +749,11 @@ func _luminance(img: Image) -> float:
 ## scene. _process only runs once the tree is actually live.
 func _process(_delta: float) -> bool:
 	_check_live_scene(_builder)
+	# After the live scene: the mimic checks read the nodes that were really
+	# placed, not a plan.
+	_check_mimic_placement(_builder, _grid)
 	print("")
+	print("assertions     : %d" % _checks)
 	if _fails.is_empty():
 		print("RESULT: OK")
 		quit(0)
@@ -673,6 +774,9 @@ func _check_live_scene(builder: Node2D) -> void:
 		return
 	var main: Node = packed.instantiate()
 	root.add_child(main)
+	# Kept so the mimic checks can read the REAL placed nodes. The bare builder
+	# has no Dungeon child, so reading it there finds nothing at all.
+	_live_main = main
 
 	var dungeon: Node2D = main.get_node_or_null("Dungeon")
 	if dungeon == null:
