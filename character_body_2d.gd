@@ -1,9 +1,18 @@
-extends CharacterBody2D
+extends "res://damageable.gd"
+## The player.
+##
+## Extends Damageable so health, damage, knockback, invincibility and the floating
+## damage number are inherited rather than re-implemented. What is left here is
+## what is genuinely specific to the player: movement, the four-frame slash, the
+## existing movement penalties from traps, and dying.
 
 @export var speed := 200.0
 @export var attack_frame_time := 0.05
 @export var idle_frame_time := 0.15
 @export var walk_frame_time := 0.1
+## invincibility_time is inherited from Damageable (0.8s). It is NOT redeclared
+## here: GDScript rejects a member that shadows a parent export, and duplicating
+## it would mean two values that silently disagree.
 
 @onready var icon: Sprite2D = $"Icon(Sprite2D)"
 @onready var attack_area: Area2D = $"AttackArea(Area2D)"
@@ -81,18 +90,72 @@ var slash_texture := preload("res://Assets/Player/Dark_Hatman_Topdown_Character/
 const IDLE_ROWS := 4    
 const WALK_ROWS := 8    
 const ATTACK_ROWS := 4  
+## Blink the sprite white while invulnerable.
+##
+## A modulate on the Icon only, so the collision shape and the slash hitbox are
+## untouched: the player really is still there, just flickering.
+func _start_invincibility_flash() -> void:
+	if _flash_tween != null and _flash_tween.is_valid():
+		_flash_tween.kill()
+	icon.modulate = Color(2.2, 2.2, 2.2, 1.0)
+	_flash_tween = create_tween()
+	_flash_tween.set_loops()
+	_flash_tween.tween_property(icon, "modulate",
+		Color(1, 1, 1, 0.25), 0.07)
+	_flash_tween.tween_property(icon, "modulate",
+		Color(2.2, 2.2, 2.2, 1.0), 0.07)
+
+
+func _stop_invincibility_flash() -> void:
+	if _flash_tween != null and _flash_tween.is_valid():
+		_flash_tween.kill()
+	_flash_tween = null
+	icon.modulate = Color(1, 1, 1, 1)
+
+
+## Death: a short fade, then back to PlayerStart with full health.
+##
+## Coins are NOT reset. GameState is an autoload precisely so the purse survives
+## the respawn, and losing it here would be the single most annoying thing the
+## feature could do.
+func _die() -> void:
+	_dying = true
+	is_attacking = false
+	attack_shape.disabled = true
+	slash_effect.visible = false
+	set_physics_process(false)
+	icon.modulate.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(icon, "modulate:a", 0.0, 0.35)
+	await tween.finished
+	if not is_inside_tree():
+		return
+	snap_to_player_start()
+	icon.modulate.a = 1.0
+	reset_health()
+	set_physics_process(true)
 const SLASH_ROWS := 3   
 
 
 const ATTACK_HITBOX_DISTANCE := 24.0
 
 var is_attacking := false
-var last_direction := Vector2.DOWN  
+var last_direction := Vector2.DOWN
+var _flash_tween: Tween  
 
 var anim_frame := 0
 var anim_timer := 0.0
 
 func _ready():
+	# The body moves onto the named `player` bit. Its MASK is unchanged in
+	# practice - still just `world` - so it collides with exactly the same walls,
+	# chests and traps it always did. Only the label on the body changed.
+	collision_layer = Layers.PLAYER
+	collision_mask = Layers.player_mask()
+	# The slash listens for enemy hurtboxes only. It is off almost all the time.
+	attack_area.collision_layer = Layers.PLAYER_HITBOX
+	attack_area.collision_mask = Layers.player_hitbox_mask()
+
 	# Take the spawn from the dungeon's PlayerStart marker before anything else,
 	# so the very first physics frame already happens at the right place.
 	snap_to_player_start()

@@ -52,6 +52,22 @@ attack={
 
 3d/physics_engine="Jolt Physics"
 
+[layer_names]
+
+2d_physics/layer_1="world"
+2d_physics/layer_2="enemy"
+2d_physics/layer_3="player"
+2d_physics/layer_4="player_hitbox"
+2d_physics/layer_5="enemy_hitbox"
+2d_physics/layer_6="pickup"
+2d_physics/layer_7="enemy_trigger"
+2d_physics/layer_8="enemy_hurtbox"
+
+[autoload]
+
+GameState="*res://game_state.gd"
+Inventory="*res://inventory.gd"
+
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
