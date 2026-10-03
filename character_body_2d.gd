@@ -179,6 +179,12 @@ func _ready():
 	icon.frame = 0 * 4 + _get_dir_col(last_direction)
 
 func _physics_process(delta):
+	# The invincibility timer lives in Damageable._physics_process. This method
+	# OVERRIDES it, so without the explicit super call the timer never counts
+	# down and the player stays invulnerable for the rest of the run after a
+	# single hit. It must come before the is_attacking early-return below.
+	super._physics_process(delta)
+
 	if is_attacking:
 		move_and_slide()
 		return
