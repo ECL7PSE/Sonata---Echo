@@ -130,12 +130,18 @@ func _bounds_and_walls() -> void:
 			"%s escaped the map at %s" % [enemy.name, str(p)])
 		# The enemy node sits at its FEET, so the cell under it is the one it
 		# stands on and must be floor.
+		#
+		# This was written as _ok(false, ...) INSIDE the failure branch, so on a
+		# passing run it contributed zero assertions - the "no enemy in a wall"
+		# rule was never actually counted. It is now asserted positively for
+		# every enemy, so a wall-standing enemy costs a real assertion whether or
+		# not it happens.
 		var cell := Vector2i(int(floor(p.x / 32.0)), int(floor(p.y / 32.0)))
-		if cell.x < 0 or cell.y < 0 or cell.y >= _grid.size():
-			continue
-		var row = _grid[cell.y]
-		if cell.x < row.size() and not bool(row[cell.x]):
-			_ok(false, "%s is standing in a wall cell %s" % [enemy.name, cell])
+		var inside: bool = cell.x >= 0 and cell.y >= 0 \
+				and cell.y < _grid.size() and cell.x < _grid[cell.y].size()
+		var on_floor: bool = inside and bool(_grid[cell.y][cell.x])
+		_ok(on_floor,
+			"%s is standing in a wall cell %s" % [enemy.name, cell])
 	print("bounds         : %d enemies checked against %dx%d map"
 			% [checked, w, h])
 

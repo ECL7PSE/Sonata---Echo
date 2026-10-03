@@ -69,6 +69,11 @@ var _wander_dir := Vector2.ZERO
 var _wander_left := 0.0
 ## One hit per swing. The swing_id is the authority, not this flag: the flag only
 ## exists to keep _last_swing_hit honest, and is re-armed by activate().
+## True once this enemy has ever fought, so it is "asleep" only before the
+## first activation. A leashed enemy clears `active` but keeps this set, which is
+## what lets it re-engage on sight without making a dormant mimic wake up.
+var _has_been_activated := false
+
 var _last_swing_hit := -1
 var _flash_tween: Tween
 
@@ -92,6 +97,7 @@ func activate() -> void:
 	if active:
 		return
 	active = true
+	_has_been_activated = true
 	# A re-activated enemy must be able to be hit by whatever swing is in flight.
 	_last_swing_hit = -1
 	if state == State.IDLE:
@@ -347,6 +353,20 @@ func _physics_process(delta: float) -> void:
 
 	match state:
 		State.IDLE:
+			# A leashed enemy that has already fought once re-engages on sight.
+			# It does NOT go back to being dormant - it is still the same awake
+			# creature, it just stopped caring. Requiring a room trigger re-entry
+			# alone was not enough: a player who never fully left the trigger's
+			# Area2D produces no new body_entered, so the enemy would sit at home
+			# ignoring a player standing in front of it.
+			#
+			# A never-activated enemy stays IDLE regardless - that is what keeps a
+			# dormant mimic (and an unvisited room) asleep. The flag is the whole
+			# distinction, and a dormant mimic never reaches this branch anyway:
+			# its _physics_process returns before the FSM until the chain ends.
+			if _has_been_activated and target != Vector2.INF \
+					and dist <= _detect():
+				activate()
 			velocity = Vector2.ZERO
 		State.WANDER:
 			_wander(delta, target != Vector2.INF and dist < _detect())

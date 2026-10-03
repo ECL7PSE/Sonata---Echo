@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Proves the mimic chain: waking, the exact sequence, the invulnerable window,
 ## the one-way transition, anchoring through every phase, and death.
 ##
@@ -59,6 +59,8 @@ func _process(_delta: float) -> bool:
 			if _frames <= 0:
 				_check_d_invulnerable()
 				_check_e_never_returns()
+				_check_leash_reengage()
+				_check_shake_cap()
 				_check_f_anchor()
 				_check_g_death()
 				_check_h_burst_push()
@@ -99,6 +101,20 @@ func _make_mimic(at := Vector2(900, 900)) -> Node2D:
 	_main.add_child(m)
 	_spawns += 1
 	return m
+
+
+## A fresh plain enemy, for the leash-reengagement rules that every species
+## shares. It is a RAT rather than a mimic so the check exercises Enemy's own
+## IDLE branch instead of the mimic's chain gate.
+func _make_rat(at := Vector2(800, 800)) -> Node2D:
+	var e: Node2D = ENEMY_SCENE.instantiate()
+	e.data = DB.RAT
+	e.position = at
+	e.home_position = at
+	e.player = _player
+	e.leash_range = 100000.0
+	_main.add_child(e)
+	return e
 
 
 ## Steps the mimic's chain by `time` seconds without waiting for real frames.
@@ -143,6 +159,109 @@ func _check_a_proximity() -> void:
 		"activate() woke a dormant mimic; room triggers must not")
 	print("proximity      : 56px radius, far=no burst, near=burst, "
 			+ "room trigger ignored")
+
+
+## After a leash it must re-engage, and must NEVER return to DORMANT.
+##
+## The behaviour being pinned down is: an awake mimic that walked home is still
+## an awake mimic. It stops fighting because the player left, not because it
+## became a chest again. Re-engagement happens either through activate() (a room
+## trigger re-entry) or simply by the player walking back into detect range.
+func _check_leash_reengage() -> void:
+	# A plain enemy: leashed, then the player returns to detect range.
+	var e := _make_rat()
+	e.activate()
+	e.leash_range = 32.0
+	_player.global_position = e.home_position + Vector2(5000, 0)
+	for i in 4000:
+		e._physics_process(1.0 / 60.0)
+		if not e.active:
+			break
+	_ok(not e.active, "the rat never leashed")
+	_ok(e.state == MIMIC_SCRIPT.State.IDLE, "a leashed rat is not IDLE")
+	# Back within detect range, with no trigger re-entry at all.
+	e.leash_range = 100000.0
+	_player.global_position = e.home_position + Vector2(20, 0)
+	e._physics_process(1.0 / 60.0)
+	_ok(e.active, "a leashed rat did not re-engage when the player returned")
+	_ok(e.state != MIMIC_SCRIPT.State.IDLE,
+		"a re-engaged rat is still IDLE (state %d)" % e.state)
+
+	# The mimic: leashed, still awake, re-engaged by activate() and by range.
+	var m := _make_mimic()
+	m._burst()
+	_run(m, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+			+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
+	_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE, "mimic did not reach AWAKE")
+	m.leash_range = 32.0
+	_player.global_position = m.home_position + Vector2(5000, 0)
+	for i in 4000:
+		m._physics_process(1.0 / 60.0)
+		if not m.active:
+			break
+	_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE,
+		"a leashed mimic went back to DORMANT (chain %d)" % m.chain)
+	_ok(not m.active, "the leashed mimic stayed active forever")
+	# Re-engage via activate(), which is the room-trigger path.
+	m.activate()
+	_ok(m.active, "a leashed awake mimic did not re-engage via activate()")
+	# And via detect range, with no activate() call.
+	var m2 := _make_mimic()
+	m2._burst()
+	_run(m2, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+			+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
+	m2.leash_range = 32.0
+	_player.global_position = m2.home_position + Vector2(5000, 0)
+	for i in 4000:
+		m2._physics_process(1.0 / 60.0)
+		if not m2.active:
+			break
+	m2.leash_range = 100000.0
+	_player.global_position = m2.home_position + Vector2(20, 0)
+	m2._physics_process(1.0 / 60.0)
+	_ok(m2.active,
+		"a leashed mimic ignored a player standing 20px away")
+	_ok(m2.chain == MIMIC_SCRIPT.Chain.AWAKE,
+		"a re-engaged mimic fell back to DORMANT")
+	# A DORMANT mimic must still ignore both paths.
+	var d := _make_mimic()
+	d.activate()
+	_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
+		"activate() woke a dormant mimic")
+	_player.global_position = d.global_position + Vector2(10, 0)
+	d._physics_process(1.0 / 60.0)
+	_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
+		"a dormant mimic re-engaged on proximity")
+	print("leash re-engage: rat + mimic both re-engage; dormant still ignores both")
+
+
+## Several mimics bursting at once must not stack past the single amplitude.
+func _check_shake_cap() -> void:
+	var ms: Array = []
+	for i in 4:
+		var m := _make_mimic(Vector2(700.0 + i * 60.0, 700.0))
+		_player.global_position = m.global_position + Vector2(10, 0)
+		m._burst()
+		ms.append(m)
+	var worst := 0.0
+	for step in 12:
+		for m in ms:
+			m._process(1.0 / 60.0)
+		for m in ms:
+			worst = maxf(worst, m.sprite.position.length())
+	_ok(worst <= m_shake() + 0.001,
+		"four simultaneous bursts reached %.2fpx, cap is %.2fpx"
+				% [worst, m_shake()])
+	print("shake cap      : 4 bursts at once, peak %.2fpx (cap %.2f)"
+			% [worst, m_shake()])
+	# And the offset is always reset when the shake ends.
+	for m in ms:
+		_ok(m.sprite.position == Vector2.ZERO,
+			"%s left a non-zero shake offset" % m.name)
+
+
+func m_shake() -> float:
+	return MIMIC_SCRIPT.SHAKE_PX
 
 
 func _prox_bodies(prox: Area2D) -> Array:
@@ -228,7 +347,6 @@ func _check_d_invulnerable() -> void:
 		"a hit in SETTLE did not land (%d -> %d)" % [before, s.health])
 	print("invuln window  : 0 damage through OPENING/HOLD/TRANSFORM, "
 			+ "hurtable in SETTLE")
-
 
 ## e. It never returns to DORMANT, even when leashed.
 func _check_e_never_returns() -> void:

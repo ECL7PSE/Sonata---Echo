@@ -30,7 +30,7 @@ enum Chain { DORMANT, OPENING, HOLD, TRANSFORM, SETTLE, AWAKE }
 @export var burst_push_radius := 24.0
 @export var burst_push := 220.0
 ## Shake on the frame the lid comes off.
-@export var shake_px := 2.0
+const SHAKE_PX := 2.0
 @export var shake_time := 0.15
 
 ## Phase lengths. Each is the sheet's own length at the fps set in _ready, so the
@@ -194,9 +194,14 @@ func _process(delta: float) -> void:
 		_shake_left = maxf(_shake_left - delta, 0.0)
 		# Decaying jitter. A constant offset would read as the sprite being
 		# misplaced rather than the chest juddering.
-		var strength := shake_px * (_shake_left / shake_time)
-		sprite.position = Vector2(randf_range(-strength, strength),
-				randf_range(-strength, strength))
+		#
+		# Clamped to a hard RADIUS, not a per-axis box: randf_range on both axes
+		# can land at +/-2 on each, a 2.83px diagonal, which breaks the "2px"
+		# promise the burst makes. Several mimics bursting together must never
+		# read as a bigger shake than one, and clamping is what guarantees that.
+		var offset := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+		var strength := SHAKE_PX * (_shake_left / shake_time)
+		sprite.position = offset * strength
 	elif sprite.position != Vector2.ZERO:
 		sprite.position = Vector2.ZERO
 
@@ -264,6 +269,10 @@ func _awaken() -> void:
 	# _physics_process until the chain reaches AWAKE.
 	state = State.CHASE
 	_play("walk")
+	# An awake mimic counts as having fought even though it never went through
+	# activate(): it woke by proximity, not by a room trigger. Without this it
+	# would leash, go IDLE, and then refuse to re-engage - awake and inert.
+	_has_been_activated = true
 	active = true
 	_last_swing_hit = -1
 

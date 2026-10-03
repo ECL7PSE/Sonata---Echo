@@ -54,16 +54,23 @@ for suite in $SUITES; do
     fi
     n=$(printf '%s' "$out" | grep -o 'assertions *: [0-9]*' | head -1 \
         | grep -o '[0-9]*')
-    n=${n:-0}
-    total=$((total + n))
+    if [ -z "$n" ]; then
+        # No assertion counter at all. Printing "0" would make a suite that
+        # measured nothing look identical to one that measured nothing AND
+        # passed on purpose. "n/a" says the truth: this suite does not count.
+        count="n/a"
+    else
+        count=$n
+        total=$((total + n))
+    fi
     ran=$((ran + 1))
 
     case "$result" in
         "RESULT: OK"*) status=PASS ;;
         *) status=FAIL; failed=$((failed + 1)) ;;
     esac
-    printf '%-5s %-20s %4s assertions  %s\n' \
-        "$status" "$suite" "$n" "${result#RESULT: }"
+    printf '%-5s %-20s %6s  %s\n' \
+        "$status" "$suite" "$count" "${result#RESULT: }"
 
     if [ "$status" = "FAIL" ]; then
         printf '%s' "$out" | grep 'FAIL:' | sed 's/^/        /'
