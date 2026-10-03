@@ -49,6 +49,12 @@ func _ready() -> void:
 ## Matching on a name prefix is not safe here: the dungeon places a Marker2D called
 ## "PlayerStart", which begins with "Player" and was being picked up instead of
 ## the body - so the HUD tried to read `health` off a Marker2D and failed.
+##
+## `do_attack` is required as well as `health_changed`, and that is not
+## decoration. Enemies are CharacterBody2Ds extending the same Damageable base,
+## so they publish `health_changed` too. Without this second test the HUD bound
+## to whichever came first in the tree walk - an enemy - and drew ITS max_health:
+## a Slime's 6 half-hearts rendered as three hearts instead of the player's five.
 func _find_player() -> Node2D:
 	var root := get_tree().root
 	for child in root.get_children():
@@ -61,9 +67,10 @@ func _find_player() -> Node2D:
 func _search(node: Node) -> Node2D:
 	if node == null:
 		return null
-	# A player is a CharacterBody2D that publishes a health signal. Anything else
-	# with a similar name is decoration.
-	if node is CharacterBody2D and node.has_signal("health_changed"):
+	# A player is a CharacterBody2D that publishes a health signal AND swings a
+	# sword. Anything else with a similar shape is an enemy or decoration.
+	if node is CharacterBody2D and node.has_signal("health_changed") \
+			and node.has_method("do_attack"):
 		return node as Node2D
 	for child in node.get_children():
 		var found := _search(child)

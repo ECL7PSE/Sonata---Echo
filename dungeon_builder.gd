@@ -1099,13 +1099,24 @@ func _place_enemy_spawns() -> void:
 		var cells := SPAWNER.plan(func(c: Vector2i) -> bool:
 				return _walkable(_grid, c), ROOMS[room_name], room_name,
 				blocked, start)
-		for cell in cells:
+		for i in cells.size():
 			var marker := Marker2D.new()
+			var cell: Vector2i = cells[i]
 			marker.name = "Spawn_%s_%d_%d" % [room_name, cell.x, cell.y]
 			marker.position = _cell_centre(cell)
 			spawns.add_child(marker)
+			# The bone hall's LAST skeleton is the boss, marked by position in the
+			# room rather than by name so the flag cannot drift from the spawn.
+			var is_boss: bool = room_name == "bone_hall" and i == cells.size() - 1
+			var enemy := SPAWNER.make_enemy(key, _cell_centre(cell), room_name,
+					null, is_boss)
+			if is_boss:
+				enemy.name = "Enemy_%s_%d_%d_boss" % [room_name, cell.x, cell.y]
+			spawns.add_child(enemy)
 		triggers.add_child(SPAWNER.make_trigger(ROOMS[room_name], room_name))
-		print("spawn %-11s %-12s %d enemy/enemies" % [room_name, key, cells.size()])
+		print("spawn %-11s %-12s %d enemy/enemies%s"
+				% [room_name, key, cells.size(),
+				" (last is the boss)" if room_name == "bone_hall" else ""])
 # --- Node factories --------------------------------------------------------
 
 ## The cells a spawn must avoid: traps, chests and crates.

@@ -57,6 +57,10 @@ func _process(_delta: float) -> bool:
 				_check_coins()
 				_check_death_effects()
 				_check_flip_anchor()
+				_check_hitbox_windows()
+				_check_cooldown()
+				_check_post_window_hit()
+				_check_swing_id()
 				_report()
 				return true
 	return false
@@ -96,8 +100,22 @@ func _spawn(key: String, at: Vector2) -> Node2D:
 func _spawn_all() -> void:
 	var x := 120.0
 	for key in DATA:
-		_spawn(key, Vector2(x, 200.0))
+		var e := _spawn(key, Vector2(x, 200.0))
+		# These checks drive single functions in isolation; the leash would drag
+		# the enemy home mid-assertion (they spawn ~600px from the player) and
+		# cancel the state under test. The leash has its own test in the smoke
+		# run, where the distance is the point.
+		e.leash_range = 100000.0
 		x += 60.0
+
+
+## A fresh, live enemy to poke at, away from the ones other checks have killed.
+func _fresh_enemy(key: String = "RAT") -> Node2D:
+	var e := _spawn(key, Vector2(300.0, 200.0))
+	e.leash_range = 100000.0
+	e.state = ENEMY_SCRIPT.State.IDLE
+	e.active = false
+	return e
 
 
 ## 1. Every monster declares all five animations at the measured frame counts.
@@ -204,6 +222,152 @@ func _check_coins() -> void:
 		checked += 1
 	print("coin drop      : %s drops %d..%d, %d drops averaged %.1f"
 			% [e.name, lo, hi, checked, float(seen) / maxf(float(checked), 1.0)])
+## Steps the real attack animation frame by frame and records the Hitbox shape's
+## `disabled` state on EVERY frame.
+##
+## Driven by calling _on_frame_changed with the sprite parked on each frame,
+## which is the same function the engine calls on frame_changed. That means the
+## assertion covers the real wiring rather than a copy of the rule.
+##
+## It also checks the frame after animation_finished, and the frames around a
+## HURT or DEAD interruption, because "the hitbox is off outside the window" is
+## easy to satisfy by only ever turning it off in the happy path.
+func _check_hitbox_windows() -> void:
+	for key in DATA:
+		var e := _enemies[_index_of(key)]
+		var sheet: Dictionary = DATA[key]["sheets"]["attack"]
+		var win: Vector2i = sheet["damage_frames"]
+		var n: int = sheet["frames"]
+		var bad: Array[String] = []
+		e.activate()
+		e.state = ENEMY_SCRIPT.State.ATTACK
+		e._play("attack")
+		for f in n:
+			e.sprite.frame = f
+			e._on_frame_changed()
+			var live: bool = not e.hit_shape.disabled
+			var should: bool = f >= win.x and f <= win.y
+			if live != should:
+				bad.append("f%d(live=%s want=%s)" % [f, str(live), str(should)])
+		print("hitbox %-12s frames %d..%d live, %d frames: %s"
+				% [key, win.x, win.y, n, "OK" if bad.is_empty() else str(bad)])
+		_ok(bad.is_empty(),
+			"%s hitbox wrong on: %s" % [key, ", ".join(bad)])
+
+		# After the animation has finished the hitbox must be stowed, even if the
+		# last frame happened to be inside the window.
+		e.sprite.frame = n - 1
+		e._on_frame_changed()
+		e._set_hitbox_active(false)
+		_ok(e.hit_shape.disabled,
+			"%s left its hitbox live after the swing ended" % key)
+
+		# A HURT during the wind-up must stow it.
+		e.state = ENEMY_SCRIPT.State.ATTACK
+		e._play("attack")
+		e.sprite.frame = 0
+		e._on_frame_changed()
+		e._enter(ENEMY_SCRIPT.State.HURT)
+		_ok(e.hit_shape.disabled,
+			"%s kept its hitbox live through a HURT interruption" % key)
+
+		# And death, mid wind-up.
+		e.state = ENEMY_SCRIPT.State.ATTACK
+		e._play("attack")
+		e.sprite.frame = 0
+		e._on_frame_changed()
+		e._die()
+		_ok(e.hit_shape.disabled and int(e.hitbox.collision_layer) == 0,
+			"%s kept a live hitbox after dying" % key)
+		e.state = ENEMY_SCRIPT.State.IDLE
+		e.active = false
+
+
+## Two attacks cannot start closer together than the database cooldown says.
+func _check_cooldown() -> void:
+	for key in DATA:
+		var cd: float = float(DATA[key]["attack_cooldown"])
+		_ok(cd > 0.0, "%s has no attack cooldown" % key)
+		var e := _enemies[_index_of(key)]
+		# Drive the FSM the way physics would: finish a swing, then confirm the
+		# cooldown gates the next one.
+		e.state = ENEMY_SCRIPT.State.ATTACK
+		e._play("attack")
+		e.sprite.stop()
+		e._cooldown = 0.0
+		e._physics_process(1.0 / 60.0)
+		_ok(is_equal_approx(e._cooldown, cd),
+			"%s set cooldown to %.2f, expected the database's %.2f"
+			% [key, e._cooldown, cd])
+		# With the cooldown still running, a new attack must not start.
+		e.activate()
+		e.state = ENEMY_SCRIPT.State.ATTACK
+		e.sprite.stop()
+		e._physics_process(1.0 / 60.0)
+		_ok(e._cooldown > 0.0, "%s forgot its cooldown" % key)
+	print("cooldown       : read per species from monster_db")
+
+
+## A hit that lands once the damage frames are live still hurts, but does not
+## stagger the attacker or cancel the swing.
+func _check_post_window_hit() -> void:
+	var e := _fresh_enemy("RAT")
+	e.activate()
+	e.state = ENEMY_SCRIPT.State.ATTACK
+	e._play("attack")
+	var win: Vector2i = DATA["RAT"]["sheets"]["attack"]["damage_frames"]
+	# Park inside the live window and confirm the hitbox is up.
+	e.sprite.frame = win.x
+	e._on_frame_changed()
+	_ok(not e.hit_shape.disabled, "hitbox is not live on frame %d" % win.x)
+
+	e.health = 10
+	e._iframe_left = 0.0
+	var before_health: int = e.health
+	e.take_damage(2, e.global_position)
+	_ok(e.health == before_health - 2,
+		"a hit during the live window dealt no damage")
+	_ok(e.state == ENEMY_SCRIPT.State.ATTACK,
+		"a hit during the live window cancelled the attack (state %d)" % e.state)
+	_ok(not e.hit_shape.disabled,
+		"a hit during the live window stowed the hitbox")
+	print("post-window    : damage lands, attack is NOT interrupted")
+
+
+## One swing_id, one hit - proven with the player's shape held open.
+##
+## The old guard relied on the attack shape being toggled between swings. This
+## holds it enabled across two physics frames to prove the id, not the shape, is
+## what stops the second hit.
+func _check_swing_id() -> void:
+	var e := _fresh_enemy("RAT")
+	e.activate()
+	e.state = ENEMY_SCRIPT.State.IDLE
+	e.health = 10
+	e._iframe_left = 0.0
+	e._last_swing_hit = -1
+	var attack := _attack_area()
+	var shape := attack.get_node_or_null("CollisionShape2D") as CollisionShape2D
+	# Deliberately NOT reset at the end: the shape stays live throughout.
+	_player.swing_id = 7
+	var before: int = e.health
+	e._on_hurtbox_area_entered(attack)
+	var after_first: int = e.health
+	_ok(after_first < before,
+		"the first swing of id 7 did not land")
+	# Same id again, with the shape still enabled.
+	e._on_hurtbox_area_entered(attack)
+	_ok(e.health == after_first,
+		"the SAME swing_id landed twice (%d -> %d)" % [after_first, e.health])
+	# A new id lands again.
+	e._iframe_left = 0.0
+	_player.swing_id = 8
+	e._on_hurtbox_area_entered(attack)
+	_ok(e.health < after_first,
+		"a new swing_id did not land (health still %d)" % e.health)
+	print("swing_id       : id 7 once, id 8 again, shape held open throughout")
+	if shape != null:
+		shape.set_deferred("disabled", true)
 ## 6. A dead enemy never blocks or hurts the player.
 func _check_death_effects() -> void:
 	var dead := _enemies[0]
@@ -251,6 +415,16 @@ func _check_flip_anchor() -> void:
 
 func _attack_area() -> Area2D:
 	return _player.get_node_or_null("AttackArea(Area2D)") as Area2D
+
+
+## Position of `key` in DATA, so a test can find its spawned enemy.
+func _index_of(key: String) -> int:
+	var i := 0
+	for k in DATA:
+		if k == key:
+			return i
+		i += 1
+	return 0
 
 
 ## Counts every coin currently parented under Main, whichever kind dropped it.

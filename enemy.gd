@@ -129,8 +129,14 @@ func _ready() -> void:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 	_sheets = data["sheets"]
-	if home_position == Vector2.ZERO:
-		home_position = position
+	if player == null:
+		_resolve_player()
+	# Always taken in GLOBAL space. The spawner sets `position` in the Dungeon
+	# node's local (2x-scaled) coordinates, so a preset home_position would be in
+	# a different space from the global_position the leash measures against - and
+	# the enemy would walk off at an angle instead of home. This was a real bug
+	# the smoke test caught: home (200,152) vs global (380,193).
+	home_position = global_position
 	# A boss is the same art, bigger, with more health and a heavier hit.
 	# The scale has to multiply the SHAPES too: scaling only the sprite would
 	# leave a 1.15x sprite with the small monster's hitbox, so the boss would
@@ -251,6 +257,28 @@ func _facing_x() -> float:
 ## The player walked out of a hurtbox: nothing to do, because the swing id
 ## already decided it. Kept as a named no-op so the connection is not mistaken
 ## for a missing behaviour.
+## Finds the player when the spawner could not supply one.
+##
+## The dungeon builder creates enemies while building its own tree, which happens
+## before or independently of the player node existing, so the reference is
+## looked up rather than injected. Deferred by one call: the player may not be
+## in the tree yet on the very first frame.
+func _resolve_player() -> void:
+	call_deferred("_look_for_player")
+
+
+func _look_for_player() -> void:
+	var root := get_tree().current_scene
+	if root == null:
+		root = get_tree().root
+	if root == null:
+		return
+	for child in root.get_children():
+		if child.has_method("take_damage") and child.has_method("do_attack"):
+			player = child as Node2D
+			return
+
+
 func _on_hurtbox_area_exited(_area: Area2D) -> void:
 	pass
 
@@ -311,6 +339,10 @@ func _physics_process(delta: float) -> void:
 	# enemy walks home and goes dormant again, so the room can be re-entered.
 	if state != State.IDLE and dist > leash_range:
 		_return_home()
+		# _return_home only sets a velocity. Without this the enemy would hold a
+		# perfectly good walk-home velocity and never take a single step, standing
+		# there "leashed" forever. The smoke test caught exactly this.
+		_move()
 		return
 
 	match state:

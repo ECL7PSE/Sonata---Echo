@@ -210,7 +210,10 @@ static func make_enemy(key: String, cell_centre: Vector2, room_name: String,
 		player: Node2D, is_boss := false) -> Node2D:
 	var e: Node2D = ENEMY_SCENE.instantiate()
 	e.set_script(ENEMY_SCRIPT)
-	e.data = DB.BY_KEY[key]
+	# BY_KEY is keyed by the lowercase species name ("rat"), while ROOM_MONSTER
+	# uses the UPPER const name ("RAT"). Normalise here rather than making every
+	# caller remember which is which.
+	e.data = DB.BY_KEY[key.to_lower()]
 	e.position = cell_centre
 	e.home_position = cell_centre
 	e.boss = is_boss
