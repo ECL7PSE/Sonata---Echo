@@ -50,6 +50,12 @@ const PROP_CLEARANCE_PX := 32.0
 const WALL_CLEARANCE_PX := 24.0
 ## Screen pixels from the player's spawn.
 const SPAWN_CLEARANCE_PX := 150.0
+## Measured from the real chest: C001_01 is a 24x24 image with a 16x15 visible
+## chest, and it is drawn 1:1. Both figures come from measure_sheets.gd's own
+## pixel scan, not from this comment.
+const MIMIC_CHEST_W := 16
+const MIMIC_CHEST_H := 15
+
 ## Traps, chests and crates. Built once so the planner and check_layout read the
 ## same list.
 static var PROPS: Array[Vector2i] = []
@@ -73,11 +79,26 @@ static func is_enemy_room(room_name: String) -> bool:
 	return ROOM_MONSTER.has(room_name)
 
 
+## Per-room count overrides, where the width rule would disagree with a
+## deliberate design decision.
+##
+## bone_hall is 6 tiles wide, which the width rule rounds to 3. The room is
+## meant to hold 2 skeletons, one of them the boss, so the override caps it. The
+## override is NAMED and lives here rather than as a magic number at the call
+## site, and check_layout asserts the exact figure so a cap cannot silently drift
+## into "however many fit".
+const COUNT_OVERRIDE := {
+	"bone_hall": 2,
+}
+
+
 ## How many enemies a room holds: one per ~70px of width, floored and capped.
 ##
 ## Width, not area, because a long thin corridor fights very differently from a
 ## square room with the same floor count.
-static func enemy_count(room: Rect2i) -> int:
+static func enemy_count(room: Rect2i, room_name: String = "") -> int:
+	if room_name != "" and COUNT_OVERRIDE.has(room_name):
+		return int(COUNT_OVERRIDE[room_name])
 	var px := float(room.size.x) * SCREEN_PX_PER_TILE
 	return clampi(int(round(px / PER_ENEMY_PX)), MIN_ENEMY, MAX_ENEMY)
 
@@ -117,7 +138,7 @@ static func plan(walkable: Callable, room: Rect2i, room_name: String,
 	# Discard the first draw: the initial state of a freshly seeded PCG can still
 	# correlate with the seed, and one throwaway draw is cheap insurance.
 	rng.randi()
-	var want := enemy_count(room)
+	var want := enemy_count(room, room_name)
 	var out: Array[Vector2i] = []
 	var why := {"room": 0, "blocked": 0, "spawnfar": 0, "overlap": 0}
 	# Bounded so a rule change that makes placement impossible fails the test

@@ -87,9 +87,9 @@ func _check_mimic_matches_chest() -> void:
 	var mimic: Dictionary = DB.MIMIC["sheets"]["dormant"]
 	_ok(mimic["path"] == C001_PATH,
 		"the dormant mimic does not use C001_01 (got %s)" % mimic["path"])
-	_ok(float(DB.MIMIC["scale"]) == 1.0,
+	_ok(float(DB.MIMIC["dormant_scale"]) == 1.0,
 		"the dormant mimic is scaled %.4f; it must be 1.0 to be pixel-identical"
-		% float(DB.MIMIC["scale"]))
+		% float(DB.MIMIC["dormant_scale"]))
 	var mimg := _image(mimic["path"])
 	var fw: int = mimic["frame_size"].x
 	var mbox := _bbox(mimg, 0, fw, fw)
@@ -99,7 +99,7 @@ func _check_mimic_matches_chest() -> void:
 	var mh := float(mbox.w - mbox.y + 1)
 	print("C001 chest     : %dx%d px on screen" % [int(cw), int(ch)])
 	print("MIMIC dormant  : %dx%d px on screen (scale %.2f), same sheet"
-			% [int(mw), int(mh), float(DB.MIMIC["scale"])])
+			% [int(mw), int(mh), float(DB.MIMIC["dormant_scale"])])
 	_ok(absf(mw - cw) <= 1.0 + EPS, "dormant mimic is %dx%d, C001 is %dx%d"
 			% [int(mw), int(mh), int(cw), int(ch)])
 	_ok(absf(mh - ch) <= 1.0 + EPS, "dormant mimic is %dx%d, C001 is %dx%d"

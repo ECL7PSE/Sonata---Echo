@@ -59,7 +59,7 @@ func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
 			print("  %-11s %-12s %d (expected 0, no trigger)"
 					% [room_name, "-", cells.size()])
 			continue
-		var target := SPAWNER.enemy_count(builder.ROOMS[room_name])
+		var target := SPAWNER.enemy_count(builder.ROOMS[room_name], room_name)
 		if cells.size() < SPAWNER.MIN_ENEMY:
 			_fail("room %s placed %d of %d %s - a room may not ship empty. "
 					% [room_name, cells.size(), target, key]
@@ -69,6 +69,13 @@ func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
 		if cells.size() > SPAWNER.MAX_ENEMY:
 			_fail("room %s placed %d enemies, over the cap of %d"
 					% [room_name, cells.size(), SPAWNER.MAX_ENEMY])
+		# A named override is a deliberate design decision, so it is asserted
+		# exactly rather than allowed to drift within the 2..6 band.
+		if SPAWNER.COUNT_OVERRIDE.has(room_name):
+			var want_exact: int = SPAWNER.COUNT_OVERRIDE[room_name]
+			if cells.size() != want_exact:
+				_fail("room %s is pinned to exactly %d enemies but placed %d"
+						% [room_name, want_exact, cells.size()])
 		if not seen_species.has(key):
 			seen_species.append(key)
 

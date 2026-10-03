@@ -323,8 +323,11 @@ const MIMIC := {
 	"coin_max": 6,
 	"attack_cooldown": 1.10,
 	"detect_range": 120.0,
-	"scale": 1.0000,
-	"body": Vector2i(16, 15),   # visible body, source px
+	"scale": 1.6000,
+	"body": Vector2i(42, 30),   # visible body, source px
+	# Dormant profile: the real chest, drawn 1:1.
+	"dormant_scale": 1.0,
+	"dormant_body": Vector2i(16, 15),
 	"sheets": {
 		"dormant": {
 			"path": "res://Assets/Dungeon/dungeon_V.1.0.0_nyknck/Chest/C001/C001_01.png",

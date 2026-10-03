@@ -20,7 +20,10 @@ extends SceneTree
 
 const BASE := "res://Assets/Monsters_Creatures_Fantasy/"
 
-## Alpha above this counts as visible; zero is padding.
+## The dormant pose is the real chest at 1:1. Both figures come from
+## measure_sheets.gd's own pixel scan of C001_01, not from this comment.
+const MIMIC_CHEST_W := 16
+const MIMIC_CHEST_H := 15
 const ALPHA_FLOOR := 1
 
 ## Target visible height on screen. A tile is 32px, so this is the middle of
@@ -28,11 +31,10 @@ const ALPHA_FLOOR := 1
 const BODY_H := {
 	"rat": 40.0, "slime": 40.0, "bat": 40.0, "mushroom": 40.0,
 	"flying_eye": 40.0, "goblin": 44.0, "skeleton": 48.0,
+	# The awake mimic is a full creature, so it gets the boss-sized target
+	# rather than the 16x15 chest profile it wears while dormant.
+	"mimic": 48.0,
 }
-## The mimic's closed chest must read as the same object as the real chest
-## sprite, so its size comes from C001 rather than the tile band.
-const MIMIC_CLOSED_W := 16.0
-const MIMIC_CLOSED_H := 15.0
 
 ## monster, animation key, sheet file, does this sheet define the body size.
 ## A file starting with "res://" is used verbatim; anything else is resolved
@@ -72,11 +74,14 @@ const SHEETS := [
 	["goblin", "death", "Goblin/Death", false],
 	["mimic", "dormant",
 			"res://Assets/Dungeon/dungeon_V.1.0.0_nyknck/Chest/C001/C001_01.png",
-			true],
+			false],
 	["mimic", "opening", "Mimic/opening", false],
 	["mimic", "idle_open", "Mimic/idle_open", false],
 	["mimic", "transform", "Mimic/transform", false],
-	["mimic", "idle_transformed", "Mimic/idle_transformed", false],
+	# The AWAKE profile is measured HERE, not on the dormant chest. Sizing a
+	# monster off its closed lid gives it a 16x15 collision box and a hitbox you
+	# can walk around, which is not what the creature is once it has stood up.
+	["mimic", "idle_transformed", "Mimic/idle_transformed", true],
 	["mimic", "walk", "Mimic/walk", false],
 	["mimic", "attack", "Mimic/attack_1", false],
 	["mimic", "hurt", "Mimic/hurt", false],
@@ -168,18 +173,21 @@ func _generate(body: Dictionary, tables: Array) -> void:
 	var scales: Dictionary = {}
 	var offsets: Dictionary = {}
 	var sizes: Dictionary = {}
+	var dormant: Dictionary = {}
 	for monster in body.keys():
 		var b: Vector4i = body[monster]
 		sizes[monster] = Vector2i(b.z - b.x + 1, b.w - b.y + 1)
+		if monster == "mimic":
+			# The dormant pose is the real chest at 1:1, and it needs its own
+			# scale and body size: sharing the awake figures would give a closed
+			# chest a 48px-tall collision box.
+			dormant["mimic"] = Vector2i(MIMIC_CHEST_W, MIMIC_CHEST_H)
 		var bw := float(b.z - b.x + 1)
 		var bh := float(b.w - b.y + 1)
-		var scale: float
-		if monster == "mimic":
-			scale = MIMIC_CLOSED_W / bw
-			if MIMIC_CLOSED_H / bh < scale:
-				scale = MIMIC_CLOSED_H / bh
-		else:
-			scale = float(BODY_H[monster]) / bh
+		# Every species now scales off its measured body against the same tile
+		# band, including the mimic: its BODY sheet is the awake pose, so it gets
+		# a creature's proportions and not the chest's.
+		var scale: float = float(BODY_H[monster]) / bh
 		print("")
 		print("%-12s body %dx%d px -> %.1fx%.1f on screen  scale %.4f"
 				% [monster, int(bw), int(bh), bw * scale, bh * scale, scale])
@@ -225,7 +233,7 @@ func _generate(body: Dictionary, tables: Array) -> void:
 	else:
 		for n in _needs_per_frame:
 			print("  " + n)
-	_write_db(scales, offsets, sizes)
+	_write_db(scales, offsets, sizes, dormant)
 ## the measured one, so the file is generated rather than transcribed.
 const STATS := {
 "rat": {"hp": 4, "dmg": 1, "spd": 86.0, "coins": [1, 3], "cd": 0.7},
@@ -241,7 +249,7 @@ const DETECT_RANGE := 120.0
 const ATTACK_COOLDOWN := 1.0
 
 
-func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary) -> void:
+func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary, dormant: Dictionary) -> void:
 	var out := PackedStringArray()
 	out.append("class_name MonsterDB")
 	out.append("extends RefCounted")
@@ -275,6 +283,11 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary) -> vo
 		out.append("\t\"scale\": %.4f," % float(scales[monster]))
 		out.append("\t\"body\": Vector2i(%d, %d),   # visible body, source px"
 				% [int(sizes[monster].x), int(sizes[monster].y)])
+		if dormant.has(monster):
+			out.append("\t# Dormant profile: the real chest, drawn 1:1.")
+			out.append("\t\"dormant_scale\": 1.0,")
+			out.append("\t\"dormant_body\": Vector2i(%d, %d),"
+					% [int(dormant[monster].x), int(dormant[monster].y)])
 		out.append("\t\"sheets\": {")
 		for i in rows.size():
 			var r: Dictionary = rows[i]
