@@ -12,6 +12,8 @@ var _fails: Array[String] = []
 ## Checks that could not be made in this environment. Reported, never hidden.
 var _skip: Array[String] = []
 var _checks := 0
+## The purse at the moment of death, so the respawn can prove it survived.
+var _death_coins := -1
 
 
 func _initialize() -> void:
@@ -210,6 +212,20 @@ func _process(_delta: float) -> bool:
 			if _frames <= 0:
 				_test_coin()
 				_test_live_hearts()
+				# Dying awaits a 0.35s tween, so the respawn needs real frames
+				# before it can be checked.
+				_begin_death()
+				_frames = 5
+				_stage = 4
+		4:
+			# Poll until the fade has finished and the player is back at the
+			# marker. 120 frames is far more than the 0.35s fade needs.
+			_frames += 1
+			var marker := _main.get_node_or_null("Dungeon/PlayerStart") as Marker2D
+			var home := marker != null and \
+				_player.global_position.distance_to(marker.global_position) < 1.0
+			if home or _frames > 120:
+				_check_respawn(home)
 				_report()
 				return true
 	return false
@@ -267,6 +283,50 @@ func _test_live_hearts() -> void:
 			"at %d hp the row has %d hearts, expected a fixed 5"
 			% [int(case["hp"]), row.get_child_count()])
 		print("live hearts    : %2d hp -> '%s'" % [int(case["hp"]), got])
+
+
+## Kills the real player, away from the spawn, with a known coin count.
+func _begin_death() -> void:
+	var state := root.get_node_or_null("GameState")
+	var marker := _main.get_node_or_null("Dungeon/PlayerStart") as Marker2D
+	_ok(state != null, "GameState autoload missing")
+	_ok(marker != null, "no PlayerStart marker on the dungeon")
+	if state != null:
+		# A non-zero purse, so "unchanged" means something: coins are meant to
+		# SURVIVE death, and a zero purse would make the check vacuous.
+		state.coins = 7
+		state.coins_changed.emit(7)
+	_death_coins = state.coins if state != null else -1
+	# Move well away from the spawn so the respawn has somewhere to return FROM.
+	_player.global_position = Vector2(-500, -500)
+	_player._iframe_left = 0.0
+	_player.health = 3
+	_player.take_damage(3, Vector2.ZERO)
+	_ok(_player.health == 0, "the killing blow did not reach 0 health")
+	_ok(_player.is_invulnerable(), "a dying player is still accepting hits")
+	print("death begin    : killed a 3hp player at (-500,-500) holding %d coins"
+		% _death_coins)
+
+
+## Back at PlayerStart, full health, purse untouched.
+func _check_respawn(made_it_home: bool) -> void:
+	var state := root.get_node_or_null("GameState")
+	var marker := _main.get_node_or_null("Dungeon/PlayerStart") as Marker2D
+	_ok(made_it_home, "the player never returned to the PlayerStart marker")
+	if marker != null:
+		print("respawn pos    : %s  (marker %s)"
+			% [str(_player.global_position), str(marker.global_position)])
+	_ok(_player.health == _player.max_health,
+		"respawned at %d hp, expected a full %d"
+		% [_player.health, _player.max_health])
+	_ok(not _player.is_invulnerable(), "still invulnerable after respawning")
+	_ok(not _player.is_attacking, "respawned still holding the attack pose")
+	if state != null:
+		_ok(state.coins == _death_coins,
+			"the purse changed across death: %d -> %d"
+			% [_death_coins, state.coins])
+		print("respawn coins  : %d -> %d (kept)" % [_death_coins, state.coins])
+	print("respawn        : PlayerStart, full health, purse intact")
 
 
 ## The end-to-end bite: the player genuinely on the tile, _bite() called for real.
