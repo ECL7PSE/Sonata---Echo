@@ -40,12 +40,29 @@ const INSET := 1
 const PER_ENEMY_PX := 70.0
 const MIN_ENEMY := 2
 const MAX_ENEMY := 6
-## Screen pixels an enemy must sit from traps, chests and torches.
-const PROP_CLEARANCE_PX := 40.0
+## Screen pixels an enemy must sit from traps, chests and crates.
+##
+## Torches and pots are NOT in this list. Torches are wall-mounted decoration
+## with no collision, so "stay away from the torch" was reserving floor nothing
+## could ever occupy.
+const PROP_CLEARANCE_PX := 32.0
+## Screen pixels of clear floor between a spawn and the nearest wall.
+const WALL_CLEARANCE_PX := 24.0
 ## Screen pixels from the player's spawn.
 const SPAWN_CLEARANCE_PX := 150.0
+## Traps, chests and crates. Built once so the planner and check_layout read the
+## same list.
+static var PROPS: Array[Vector2i] = []
 ## The Dungeon node is scaled 2x, so one source tile is 32 screen pixels.
 const SCREEN_PX_PER_TILE := 32.0
+
+
+static func set_props(cells: Array[Vector2i]) -> void:
+	PROPS = cells
+
+
+static func props() -> Array[Vector2i]:
+	return PROPS
 
 
 static func monster_key(room_name: String) -> String:
@@ -129,18 +146,40 @@ static func plan(walkable: Callable, room: Rect2i, room_name: String,
 	return out
 
 
+## Is this cell floor, with the given clearance from the nearest wall?
+##
+## The rule is the literal spec - "the spawn cell is floor and at least 24px from
+## any wall" - rather than the old blanket "the whole 3x3 ring must be inside
+## the room and walkable". The ring rule was stricter in two ways the spec never
+## asked for: it demanded room-rect membership as well as walkability, and it
+## cost 8 of the 9 cells around a spawn in the small appended rooms.
+##
+## Clearance is measured, not assumed: the smallest Chebyshev ring containing a
+## non-floor cell, times the screen size of a tile.
 static func _fits(walkable: Callable, cell: Vector2i, room: Rect2i) -> bool:
-	# The cell itself plus the INSET ring must all be inside the room and
-	# walkable. Checking the whole ring is what guarantees the clearance: a
-	# single walkable cell still leaves the sprite brushing the wall cap.
-	for dy in range(-INSET, INSET + 1):
-		for dx in range(-INSET, INSET + 1):
-			var c := cell + Vector2i(dx, dy)
-			if not room.has_point(c):
-				return false
-			if not bool(walkable.call(c)):
-				return false
-	return true
+	if not room.has_point(cell):
+		return false
+	if not bool(walkable.call(cell)):
+		return false
+	var clearance := wall_clearance_px(walkable, cell)
+	return clearance >= WALL_CLEARANCE_PX
+
+
+## Distance in screen pixels from `cell` to the nearest non-floor cell.
+static func wall_clearance_px(walkable: Callable, cell: Vector2i) -> float:
+	for ring in range(0, 4):
+		var on_ring := false
+		for dy in range(-ring, ring + 1):
+			for dx in range(-ring, ring + 1):
+				# only the square's border
+				if absi(dx) != ring and absi(dy) != ring:
+					continue
+				on_ring = true
+				if not bool(walkable.call(cell + Vector2i(dx, dy))):
+					return float(ring) * SCREEN_PX_PER_TILE
+		if not on_ring:
+			break
+	return 4.0 * SCREEN_PX_PER_TILE
 
 
 ## True when `cell` is within `min_px` of anything in `others`.

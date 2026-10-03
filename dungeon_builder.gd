@@ -1108,23 +1108,65 @@ func _place_enemy_spawns() -> void:
 		print("spawn %-11s %-12s %d enemy/enemies" % [room_name, key, cells.size()])
 # --- Node factories --------------------------------------------------------
 
-## The cells occupied by anything a spawn must avoid: every trap, chest, pot,
-## crate and torch that made it into the tree.
+## The cells a spawn must avoid: traps, chests and crates.
+##
+## Read from the const lists, not by walking the tree. The tree version picked up
+## torches and pots too, and torches are wall decoration with no collider - they
+## were reserving floor that could never be used.
 func _blocked_cells() -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	for holder_name in ["Props", "Hazards"]:
-		var holder := get_node_or_null(holder_name)
-		if holder == null:
-			continue
-		for child in holder.get_children():
-			if child is Node2D:
-				out.append(_cell_at((child as Node2D).position))
+	out.append_array(TRAPS)
+	out.append_array(CHESTS)
+	out.append_array(CRATES)
+	SPAWNER.set_props(out)
 	return out
 
 
-## The cell whose centre a source-pixel position falls in.
-func _cell_at(pos: Vector2) -> Vector2i:
-	return Vector2i(int(floor(pos.x / GRID)), int(floor(pos.y / GRID)))
+## Where the spawns went, without building the whole scene.
+##
+## Returns [{name, cell}] for each marker the planner chose. Kept separate from
+## _place_enemy_spawns so a test can assert the plan without instantiating
+## enemies, and so the two cannot drift apart.
+func _place_enemy_spawns_probe(grid: Array) -> Array:
+	var out: Array = []
+	var walkable := _safe_walkable(grid)
+	var blocked := _blocked_cells()
+	var start := _room_centre(ROOM_HALL)
+	for room_name in ROOMS:
+		if not SPAWNER.is_enemy_room(room_name):
+			continue
+		for cell in SPAWNER.plan(walkable, ROOMS[room_name], room_name,
+				blocked, start):
+			out.append({"name": "Spawn_%s_%d_%d" % [room_name, cell.x, cell.y],
+					"room": room_name, "cell": cell})
+	return out
+
+
+## _walkable with bounds checking, because the clearance probe deliberately
+## walks rings OUTWARD from a cell and will leave the map. The unguarded version
+## threw "Out of bounds get index" once per probe ring.
+func _safe_walkable(grid: Array) -> Callable:
+	return func(c: Vector2i) -> bool:
+		if c.x < 0 or c.y < 0 or c.y >= grid.size():
+			return false
+		var row = grid[c.y]
+		if c.x >= row.size():
+			return false
+		return bool(row[c.x])
+
+
+## The candidate cells for a room, for the failure message when it comes up
+## short. Showing the room's legal cells is what makes a placement failure
+## actionable instead of just a number.
+func _room_candidates(grid: Array, room: Rect2i) -> Array:
+	var walkable := _safe_walkable(grid)
+	var out: Array = []
+	for y in room.size.y:
+		for x in room.size.x:
+			var c := room.position + Vector2i(x, y)
+			if bool(walkable.call(c)):
+				out.append(c)
+	return out
 
 
 func _make_chest(cell: Vector2i) -> Area2D:

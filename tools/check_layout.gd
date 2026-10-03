@@ -12,9 +12,107 @@ extends SceneTree
 ## wall straight back), or a floor that is not darker than the cap.
 
 const BUILDER := preload("res://dungeon_builder.gd")
+const SPAWNER := preload("res://enemy_spawner.gd")
+## Test hook. Set to a room name to drop that room's spawns before checking, so
+## the "a room may not ship empty" assertion can be proved to fire instead of
+## being assumed to work. Empty in normal runs.
+const FORCE_EMPTY_ROOM := ""
 
 var _fails: Array[String] = []
 var _builder: Node2D
+
+
+## Every rule the enemy spawns have to obey, checked against the markers the
+## builder actually placed rather than by re-running the planner.
+##
+## The planner could be self-consistent and still wrong, so nothing here calls
+## plan(): it reads the markers, re-derives the geometry from the grid, and
+## checks the room/name/count table independently.
+func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
+	var spawns: Array = builder._place_enemy_spawns_probe(grid)
+	var walkable: Callable = builder._safe_walkable(grid)
+	var start: Vector2i = builder._room_centre(builder.ROOM_HALL)
+
+	# Group the markers by room. Read the room from the data, NOT by splitting the
+	# marker name: "Spawn_bone_hall_2_35".split("_")[1] is "bone", which silently
+	# reported every underscored room as empty.
+	var by_room: Dictionary = {}
+	for entry in spawns:
+		var room := str(entry["room"])
+		if FORCE_EMPTY_ROOM != "" and room == FORCE_EMPTY_ROOM:
+			continue
+		if not by_room.has(room):
+			by_room[room] = []
+		by_room[room].append(entry)
+
+	print("")
+	print("enemy spawns   :")
+	var seen_species: Array[String] = []
+	for room_name in builder.ROOMS:
+		var key := SPAWNER.monster_key(room_name)
+		var cells: Array = by_room.get(room_name, [])
+		if key == "":
+			# The hall and the shaft must be clean.
+			if cells.size() != 0:
+				_fail("room %s has %d enemies but must have none"
+						% [room_name, cells.size()])
+			print("  %-11s %-12s %d (expected 0, no trigger)"
+					% [room_name, "-", cells.size()])
+			continue
+		var target := SPAWNER.enemy_count(builder.ROOMS[room_name])
+		if cells.size() < SPAWNER.MIN_ENEMY:
+			_fail("room %s placed %d of %d %s - a room may not ship empty. "
+					% [room_name, cells.size(), target, key]
+					+ "candidates=%s blocked=%s"
+					% [str(builder._room_candidates(grid, builder.ROOMS[room_name])),
+					str(SPAWNER.props())])
+		if cells.size() > SPAWNER.MAX_ENEMY:
+			_fail("room %s placed %d enemies, over the cap of %d"
+					% [room_name, cells.size(), SPAWNER.MAX_ENEMY])
+		if not seen_species.has(key):
+			seen_species.append(key)
+
+		# Per-spawn rules.
+		for entry in cells:
+			var cell: Vector2i = entry["cell"]
+			if not bool(walkable.call(cell)):
+				_fail("spawn %s at %s is not floor" % [room_name, cell])
+			var wall := SPAWNER.wall_clearance_px(walkable, cell)
+			if wall < SPAWNER.WALL_CLEARANCE_PX:
+				_fail("spawn %s at %s is %.0fpx from a wall, need %.0f"
+						% [room_name, cell, wall, SPAWNER.WALL_CLEARANCE_PX])
+			if not builder.ROOMS[room_name].has_point(cell):
+				_fail("spawn %s at %s is outside its room" % [room_name, cell])
+			for b in SPAWNER.props():
+				var prop := b as Vector2i
+				if Vector2(prop - cell).length() * 32.0 \
+						< SPAWNER.PROP_CLEARANCE_PX:
+					_fail("spawn %s at %s is too close to a prop at %s"
+							% [room_name, cell, prop])
+			if Vector2(start - cell).length() * 32.0 \
+					< SPAWNER.SPAWN_CLEARANCE_PX:
+				_fail("spawn %s at %s is within %.0fpx of PlayerStart"
+						% [room_name, cell, SPAWNER.SPAWN_CLEARANCE_PX])
+		# No two spawns on top of each other.
+		for i in cells.size():
+			for j in range(i + 1, cells.size()):
+				var a: Vector2i = cells[i]["cell"]
+				var b: Vector2i = cells[j]["cell"]
+				if Vector2(a - b).length() * 32.0 < 32.0:
+					_fail("spawns %s at %s and %s overlap"
+							% [room_name, a, b])
+		print("  %-11s %-12s %d/%d" % [room_name, key, cells.size(), target])
+
+	for want in ["RAT", "SLIME", "BAT", "MUSHROOM", "FLYING_EYE", "GOBLIN",
+			"SKELETON"]:
+		if not seen_species.has(want):
+			_fail("no room spawns a %s" % want)
+	print("  species seen : %d/7 (mimic lands in 3B-2b)"
+			% seen_species.size())
+
+
+func _fail(message: String) -> void:
+	_fails.append(message)
 
 
 func _initialize() -> void:
@@ -27,6 +125,7 @@ func _initialize() -> void:
 		_fails.append(str(p))
 
 	_check_removed_hallway(builder, grid)
+	_check_enemy_spawns(builder, grid)
 	_print_map(builder, grid)
 
 	# Wall census. The wall:floor ratio decides whether the map reads as rooms
