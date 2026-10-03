@@ -73,6 +73,10 @@ var _wander_left := 0.0
 ## first activation. A leashed enemy clears `active` but keeps this set, which is
 ## what lets it re-engage on sight without making a dormant mimic wake up.
 var _has_been_activated := false
+## Seconds before a leashed enemy may re-engage on sight. Armed when it reaches
+## home and counted down in _physics_process.
+@export var reengage_delay := 1.0
+var _reengage_left := 0.0
 
 var _last_swing_hit := -1
 var _flash_tween: Tween
@@ -118,6 +122,8 @@ func _return_home() -> void:
 		velocity = Vector2.ZERO
 		active = false
 		_last_swing_hit = -1
+		# Armed on arrival, not on the way: a long walk home is not "settling".
+		_reengage_left = reengage_delay
 		_enter(State.IDLE)
 		return
 	away = away.normalized()
@@ -323,6 +329,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_state_time += delta
 	_cooldown = maxf(_cooldown - delta, 0.0)
+	_reengage_left = maxf(_reengage_left - delta, 0.0)
 
 	if state == State.HURT:
 		# Knockback decays here rather than in take_damage, so the enemy slides
@@ -355,18 +362,28 @@ func _physics_process(delta: float) -> void:
 		State.IDLE:
 			# A leashed enemy that has already fought once re-engages on sight.
 			# It does NOT go back to being dormant - it is still the same awake
-			# creature, it just stopped caring. Requiring a room trigger re-entry
-			# alone was not enough: a player who never fully left the trigger's
-			# Area2D produces no new body_entered, so the enemy would sit at home
-			# ignoring a player standing in front of it.
+			# creature, it just stopped caring.
 			#
-			# A never-activated enemy stays IDLE regardless - that is what keeps a
-			# dormant mimic (and an unvisited room) asleep. The flag is the whole
-			# distinction, and a dormant mimic never reaches this branch anyway:
-			# its _physics_process returns before the FSM until the chain ends.
-			if _has_been_activated and target != Vector2.INF \
-					and dist <= _detect():
-				activate()
+			# HYSTERESIS. Detect range alone is not enough to re-engage, because it
+			# is measured from the ENEMY while the leash is measured from HOME. An
+			# enemy walking home is still within detect range of a player who is
+			# themselves still walking away, so it would re-engage, chase, leash,
+			# re-engage... forever. Two conditions must hold: the player is inside
+			# detect range AND inside leash range of HOME (so the fight has not
+			# started outside the room again), or the re-engage cooldown has passed.
+			#
+			# A never-activated enemy never satisfies _has_been_activated, which
+			# is what keeps a dormant mimic and an unvisited room asleep. A dormant
+			# mimic cannot reach this branch at all: its _physics_process returns
+			# before the FSM until the chain ends.
+			if _has_been_activated and target != Vector2.INF:
+				var home_dist := target.distance_to(home_position)
+				var back_home := global_position.distance_to(home_position) < 4.0
+				var in_detect := dist <= _detect()
+				var settled: bool = home_dist <= leash_range \
+						or _reengage_left <= 0.0
+				if in_detect and (back_home or settled):
+					activate()
 			velocity = Vector2.ZERO
 		State.WANDER:
 			_wander(delta, target != Vector2.INF and dist < _detect())

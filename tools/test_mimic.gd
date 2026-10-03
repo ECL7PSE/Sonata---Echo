@@ -60,7 +60,7 @@ func _process(_delta: float) -> bool:
 				_check_d_invulnerable()
 				_check_e_never_returns()
 				_check_leash_reengage()
-				_check_shake_cap()
+				_check_no_oscillation()
 				_check_f_anchor()
 				_check_g_death()
 				_check_h_burst_push()
@@ -235,6 +235,63 @@ func _check_leash_reengage() -> void:
 	print("leash re-engage: rat + mimic both re-engage; dormant still ignores both")
 
 
+## It must not oscillate: re-engage, leash, re-engage, leash.
+##
+## The bad case is a player standing just outside leash range but still inside
+## the enemy's detect range. Without hysteresis the enemy re-engages, chases,
+## immediately exceeds the leash, walks back, re-engages again - and the state
+## counter climbs without bound. Both species are checked, because the mimic's
+## own IDLE handling has to inherit the same gate.
+func _check_no_oscillation() -> void:
+	for label in ["rat", "mimic"]:
+		var e: Node2D = _make_rat() if label == "rat" else _make_mimic()
+		if label == "mimic":
+			e._burst()
+			_run(e, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+					+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME
+					+ MARGIN)
+		# Player parked just past the leash radius from HOME, and the enemy sent
+		# home first so it starts IDLE with the cooldown armed.
+		e.activate()
+		e.leash_range = 40.0
+		_player.global_position = e.home_position + Vector2(5000, 0)
+		for i in 4000:
+			e._physics_process(1.0 / 60.0)
+			if not e.active:
+				break
+		_ok(not e.active, "%s never reached home" % label)
+		# Now the oscillating position: 60px from home, inside the 120px detect.
+		_player.global_position = e.home_position + Vector2(60, 0)
+		var transitions := 0
+		var was_active: bool = e.active
+		for i in 300:
+			e._physics_process(1.0 / 60.0)
+			# Only the mimic defines _process; Enemy deliberately has none.
+			if e.has_method("_process"):
+				e._process(1.0 / 60.0)
+			if e.active != was_active:
+				transitions += 1
+				was_active = e.active
+		_ok(transitions <= 2,
+			"%s oscillated: %d active-state flips in 300 frames at 60px out"
+					% [label, transitions])
+		print("no oscillation : %-6s %d state flips over 300 frames at 60px"
+				% [label, transitions])
+	# And the counter really does recover once the player is properly gone.
+	var e2 := _make_rat()
+	e2.activate()
+	e2.leash_range = 40.0
+	_player.global_position = e2.home_position + Vector2(5000, 0)
+	for i in 4000:
+		e2._physics_process(1.0 / 60.0)
+		if not e2.active:
+			break
+	_ok(is_equal_approx(e2._reengage_left, 0.0)
+			or e2._reengage_left <= e2.reengage_delay,
+		"the re-engage cooldown was never armed on arrival (%.2f)"
+				% e2._reengage_left)
+
+
 ## Several mimics bursting at once must not stack past the single amplitude.
 func _check_shake_cap() -> void:
 	var ms: Array = []
@@ -374,8 +431,12 @@ func _check_f_anchor() -> void:
 		for f in int(sheet["frames"]):
 			frames += 1
 			var b := _bbox(img, f, fw, fh)
+			# Asserted ALWAYS, not only when blank. The geometry checks below can
+			# only run for a frame that has pixels, so an unconditional count here
+			# is what keeps a sheet of blank frames from quietly contributing
+			# nothing to the suite.
+			_ok(b.z >= 0, "mimic %s frame %d is blank" % [anim, f])
 			if b.z < 0:
-				_ok(false, "mimic %s frame %d is blank" % [anim, f])
 				continue
 			var bc := Vector2((b.x + b.z) * 0.5, float(b.w))
 			# Unflipped, the offset must land the bottom-centre on the origin.

@@ -151,9 +151,13 @@ func _check_all_anchored() -> void:
 			for f in got_frames:
 				per_sheet += 1
 				var b := _bbox(img, f, fw, fh)
+				# Counted unconditionally, then used to skip the geometry. Written
+				# as a bare _fails.append under the guard it contributed NOTHING on a
+				# passing run, so a sheet full of blank frames cost the suite zero
+				# assertions instead of one per frame.
+				_ok(b.z >= 0, "%s/%s frame %d is blank"
+						% [key, anim, f])
 				if b.z < 0:
-					_fails.append("%s/%s frame %d is blank"
-							% [key, anim, f])
 					continue
 				# offset-corrected bottom-centre, in sprite-local space
 				var bc := Vector2((b.x + b.z) * 0.5, float(b.w))
