@@ -49,6 +49,28 @@ var _shake_left := 0.0
 var _scale_tween: Tween
 ## Set once the burst has begun, so nothing can start it a second time.
 var _has_burst := false
+## Puts an awake mimic back to being a chest.
+##
+## The run reset is the only way a mimic ever returns to DORMANT: once woken it
+## stays a monster, which is what makes it a threat. The exception is a full run
+## reset, where the whole dungeon is put back exactly as it was built.
+func dormant_reset() -> void:
+	chain = Chain.DORMANT
+	_has_burst = false
+	_dead_handled = false
+	_coins_dropped = false
+	_shake_left = 0.0
+	_scale_tween = null
+	sprite.modulate = Color(1, 1, 1, 1)
+	sprite.position = Vector2.ZERO
+	sprite.scale = Vector2(data.get("dormant_scale", 1.0), data.get("dormant_scale", 1.0))
+	_apply_dormant_profile()
+	if player != null:
+		var dist := player.global_position.distance_to(global_position)
+		if dist <= wake_radius:
+			_burst()
+
+
 func _ready() -> void:
 	super._ready()
 	_build_proximity()

@@ -20,6 +20,10 @@ extends Area2D
 @export var idle_animation := "idle"
 @export var open_animation := "open"
 @export var coin_count := 5
+## The LAST chest in the run. Opening it does not pay out: it sends the player
+## back to PlayerStart and puts every enemy back to sleep, which is how the run
+## loops instead of ending.
+@export var resets_the_run := false
 ## Frames the chest is vulnerable for after a hit, so one swing cannot loot it
 ## several times over.
 @export var cooldown := 0.6
@@ -69,6 +73,10 @@ func _on_area_entered(area: Area2D) -> void:
 ## enemy deaths will use, so a coin from a chest and a coin from a goblin behave
 ## identically.
 func _spawn_coins() -> void:
+	if resets_the_run:
+		# The last chest is a doorway, not a payout.
+		preload("res://run_reset.gd").reset(get_tree())
+		return
 	var parent := get_parent()
 	if parent == null:
 		return

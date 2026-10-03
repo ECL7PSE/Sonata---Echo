@@ -1222,11 +1222,22 @@ func _room_candidates(grid: Array, room: Rect2i) -> Array:
 	return out
 
 
+## The single chest that ends the loop, in the furthest room.
+const FINAL_CHEST := Vector2i(4, 36)
+
+
+func _is_final_chest(cell: Vector2i) -> bool:
+	return cell == FINAL_CHEST
+
+
 func _make_chest(cell: Vector2i) -> Area2D:
 	var node := Area2D.new()
 	node.name = "Chest_%d_%d" % [cell.x, cell.y]
 	node.position = _cell_centre(cell)
 	node.set_script(LOOT_SCRIPT)
+	# The chest in the LAST room is a doorway, not a payout: opening it sends the
+	# player back to PlayerStart and respawns every enemy.
+	node.set("resets_the_run", _is_final_chest(cell))
 
 	var sprite := AnimatedSprite2D.new()
 	sprite.name = "Sprite"

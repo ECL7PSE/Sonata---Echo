@@ -124,6 +124,19 @@ func activate() -> void:
 ##
 ## The return is a state, not a teleport: snapping would let a player kite an
 ## enemy across the room for free, and would look wrong.
+## Puts an enemy back to sleep at home, without the walk. Used by the run reset,
+## which teleports rather than leashing.
+func deactivate() -> void:
+	_set_hitbox_active(false)
+	active = false
+	_last_swing_hit = -1
+	_reengage_left = 0.0
+	velocity = Vector2.ZERO
+	global_position = home_position
+	_enter(State.IDLE)
+	_play("idle")
+
+
 func _return_home() -> void:
 	_set_hitbox_active(false)
 	var away := home_position - global_position
@@ -185,6 +198,10 @@ func _ready() -> void:
 	hurtbox.collision_mask = Layers.enemy_hurtbox_mask()
 	hitbox.collision_layer = Layers.ENEMY_HITBOX
 	hitbox.collision_mask = Layers.enemy_hitbox_mask()
+	# monitoring MUST be on. The scene shipped with it false, so
+	# get_overlapping_bodies() always came back empty and no enemy ever
+	# damaged the player - only the spikes did.
+	hitbox.monitoring = true
 
 	_size_shapes()
 	_build_animations()

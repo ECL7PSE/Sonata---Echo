@@ -87,7 +87,14 @@ func _ready() -> void:
 
 func _on_coins_changed(current: int) -> void:
 	coin_count.text = str(current)
-	_pop()
+	# Hide the row entirely at zero. A lone "0" under the hearts read as a stray
+	# piece of UI rather than a coin count, and there is nothing to report until
+	# the first coin is actually picked up.
+	var row := coin_count.get_parent() as Control
+	if row != null:
+		row.visible = current > 0
+	if current > 0:
+		_pop()
 
 
 ## A short scale punch so a pickup reads as an event.

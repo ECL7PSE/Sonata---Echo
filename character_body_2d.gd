@@ -147,6 +147,10 @@ var anim_frame := 0
 var anim_timer := 0.0
 
 func _ready():
+	# Full health before anything else can touch it. The base class already
+	# does this, but an empty HUD on the first frame is a bad first
+	# impression, so the guarantee is made explicit here.
+	health = max_health
 	# The body moves onto the named `player` bit. Its MASK is unchanged in
 	# practice - still just `world` - so it collides with exactly the same walls,
 	# chests and traps it always did. Only the label on the body changed.
