@@ -21,12 +21,18 @@ extends SceneTree
 const BASE := "res://Assets/Monsters_Creatures_Fantasy/"
 
 ## The player's idle sheet and the Sprite2D scale it is drawn at, from
-## Main.tscn. Monsters are sized against the PLAYER, not the tile: a rat that is
-## "1.5 tiles tall" can still dwarf the character it is chasing.
+## Main.tscn.
 const PLAYER_SHEET := "res://Assets/Player/Dark_Hatman_Topdown_Character/Animations/Idle/darkhatman_idle_sheet_64x64.png"
 const PLAYER_CELL := 64
-## Main.tscn sets the player Sprite2D to scale 1.2.
+## Main.tscn sets the player Sprite2D to scale 1.2. The player sits OUTSIDE the
+## Dungeon node, so its global scale is 1 and this is the whole story.
 const PLAYER_SCALE := 1.2
+
+## The Dungeon node is scaled 2x and every monster is its child, so a monster's
+## RENDERED size is source x sprite scale x 2. Measuring against the player's
+## sprite scale alone made every monster render at twice its intended size,
+## which is exactly the "2x too big" report. Every size here is RENDERED.
+const DUNGEON_SCALE := 2.0
 
 ## One knob for every monster size. Exported on the enemy so it can be tuned
 ## without regenerating the database.
@@ -236,10 +242,22 @@ func _generate(body: Dictionary, tables: Array) -> void:
 		# scaled to the player's visible height times this species' multiple.
 		var target: float = player_visible_height() \
 				* float(BODY_MULT[monster]) * ENEMY_SCALE_MULT
-		var scale: float = target / maxf(bw, bh)
+		# Rendered size, so the 2x Dungeon scale divides out here and a monster
+		# ends up the same on-screen height as the player.
+		var longest_src := maxf(bw, bh)
+		var scale: float = target / (longest_src * DUNGEON_SCALE)
+		# A rat or a bat is far wider than it is tall. Matching the longest
+		# dimension to the player's HEIGHT would let a 54px-wide bat render
+		# wider than the player is tall, so wide bodies are additionally capped
+		# at 1.5x the player's height.
+		var w_cap: float = player_visible_height() * 1.5 \
+				* ENEMY_SCALE_MULT / (bw * DUNGEON_SCALE)
+		if scale > w_cap:
+			scale = w_cap
 		print("")
-		print("%-12s body %dx%d px -> %.1fx%.1f on screen  scale %.4f"
-				% [monster, int(bw), int(bh), bw * scale, bh * scale, scale])
+		print("%-12s body %dx%d src -> %.1fx%.1f RENDERED  scale %.4f"
+				% [monster, int(bw), int(bh),
+				bw * scale * DUNGEON_SCALE, bh * scale * DUNGEON_SCALE, scale])
 		scales[monster] = scale
 		var mine: Array = []
 		for t in tables:
@@ -320,6 +338,11 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary, dorma
 	out.append("")
 	out.append("## The player's visible body height on screen, measured from its sprite.")
 	out.append("const PLAYER_H := %.4f" % player_visible_height())
+	# Monsters live under a 2x-scaled Dungeon, so this is what the test must
+	# multiply by to get a true on-screen size.
+	out.append("const DUNGEON_SCALE := %.4f" % DUNGEON_SCALE)
+	out.append("## Widest a monster may render, as a multiple of PLAYER_H.")
+	out.append("const MAX_W_MULT := 1.5")
 	out.append("## Target visible size per species, as a multiple of PLAYER_H, applied")
 	out.append("## to the LARGER of body width and height.")
 	out.append("const BODY_MULT := {")

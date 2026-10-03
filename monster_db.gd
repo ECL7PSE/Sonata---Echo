@@ -17,6 +17,9 @@ const ATTACK_COOLDOWN := 1.0
 
 ## The player's visible body height on screen, measured from its sprite.
 const PLAYER_H := 51.6000
+const DUNGEON_SCALE := 2.0000
+## Widest a monster may render, as a multiple of PLAYER_H.
+const MAX_W_MULT := 1.5
 ## Target visible size per species, as a multiple of PLAYER_H, applied
 ## to the LARGER of body width and height.
 const BODY_MULT := {
@@ -39,7 +42,7 @@ const RAT := {
 	"coin_max": 3,
 	"attack_cooldown": 0.70,
 	"detect_range": 120.0,
-	"scale": 1.2900,
+	"scale": 0.6450,
 	"body": Vector2i(40, 20),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -89,7 +92,7 @@ const SLIME := {
 	"coin_max": 3,
 	"attack_cooldown": 0.90,
 	"detect_range": 120.0,
-	"scale": 1.1727,
+	"scale": 0.5864,
 	"body": Vector2i(44, 18),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -138,7 +141,7 @@ const BAT := {
 	"coin_max": 3,
 	"attack_cooldown": 0.60,
 	"detect_range": 120.0,
-	"scale": 0.9556,
+	"scale": 0.4778,
 	"body": Vector2i(54, 33),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -189,7 +192,7 @@ const MUSHROOM := {
 	"coin_max": 3,
 	"attack_cooldown": 1.00,
 	"detect_range": 120.0,
-	"scale": 1.3946,
+	"scale": 0.6973,
 	"body": Vector2i(23, 37),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -239,7 +242,7 @@ const FLYING_EYE := {
 	"coin_max": 3,
 	"attack_cooldown": 0.80,
 	"detect_range": 120.0,
-	"scale": 1.2585,
+	"scale": 0.6293,
 	"body": Vector2i(41, 31),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -290,7 +293,7 @@ const GOBLIN := {
 	"coin_max": 3,
 	"attack_cooldown": 1.00,
 	"detect_range": 120.0,
-	"scale": 1.4333,
+	"scale": 0.7167,
 	"body": Vector2i(33, 36),   # visible body, source px
 	"sheets": {
 		"idle": {
@@ -338,7 +341,7 @@ const MIMIC := {
 	"coin_max": 6,
 	"attack_cooldown": 1.10,
 	"detect_range": 120.0,
-	"scale": 1.4743,
+	"scale": 0.7371,
 	"body": Vector2i(42, 30),   # visible body, source px
 	# Dormant profile: the real chest, drawn 1:1.
 	"dormant_scale": 1.0,
@@ -418,7 +421,7 @@ const SKELETON := {
 	"coin_max": 10,
 	"attack_cooldown": 1.20,
 	"detect_range": 120.0,
-	"scale": 1.3153,
+	"scale": 0.6576,
 	"body": Vector2i(45, 51),   # visible body, source px
 	"sheets": {
 		"idle": {

@@ -1,42 +1,33 @@
 extends CanvasLayer
-## The coin counter and the item hotbar.
+## The coin counter. Hearts live in health_ui.gd.
 ##
 ## Shares the Health UI's CanvasLayer idea: a separate canvas, so the dungeon
 ## ambient and the torch lights never touch it.
 ##
-## Every position here is a constant, so the layout can be nudged without
-## hunting through node paths.
+## The hotbar was removed entirely - no slots, no panel, no toggle. Nothing in
+## the game puts anything in an inventory yet, so it was four empty boxes
+## covering the bottom of the screen.
 
 const COIN_ICON := preload("res://Assets/UI/pixel_ui/icons/coin.png")
-const SLOT_ICON := preload("res://Assets/UI/Inventory/Inventory_Slot_1.png")
 
 ## LAYOUT. Every position and size is here, so the HUD can be nudged without
-## hunting through node paths or guessing at container behaviour.
-const ICON_SCALE := 3
-## How many hotbar slots to show. All empty for now.
-const SLOT_COUNT := 4
-
+## hunting through node paths.
+##
 ## --- hearts (health_ui.gd owns these; the coin row is positioned under them)
 const HEARTS_ORIGIN := Vector2(12, 10)
 const HEART_SIZE := 16 * 3        # 16px source at 3x
+const HEART_COUNT := 5
 ## Gap between the bottom of the hearts and the top of the coin row.
 const COIN_ROW_GAP := 8
 
-## --- coin row, directly under the hearts
+## --- coin row: one HBox, 8px separation, directly under the hearts
 const COIN_ROW_ORIGIN := Vector2(HEARTS_ORIGIN.x,
-		HEARTS_ORIGIN.y + HEART_SIZE * 5 + COIN_ROW_GAP)
-## 16x16 coin at 2x. It was being drawn at 3x of an 80px G001 sheet, which is
-## ~150px on screen and overlapped the hotbar.
+		HEARTS_ORIGIN.y + HEART_SIZE * HEART_COUNT + COIN_ROW_GAP)
+const COIN_SEPARATION := 8
+## 16x16 coin at 2x = 32px. It was previously drawn from the 80px G001 spin
+## sheet, which rendered ~150px on screen and ran over everything.
 const COIN_SCALE := 2
-const COIN_GAP := 6              # between the icon and the count label
 const COUNT_FONT_SIZE := 18
-
-## --- hotbar, centred along the bottom edge
-const SLOT_SCALE := 2            # 32px source -> 64px
-const SLOT_GAP := 6
-const HOTBAR_MARGIN := 10        # from the bottom of the screen
-
-@onready var hotbar: HBoxContainer = $Hotbar
 
 var coin_icon: TextureRect
 var coin_count: Label
@@ -48,7 +39,7 @@ var coin_count: Label
 func _build_coin_row() -> void:
 	var row := HBoxContainer.new()
 	row.name = "CoinRow"
-	row.add_theme_constant_override("separation", COIN_GAP)
+	row.add_theme_constant_override("separation", COIN_SEPARATION)
 	row.position = COIN_ROW_ORIGIN
 	row.z_index = 1
 	add_child(row)
@@ -79,7 +70,6 @@ func _build_coin_row() -> void:
 func _ready() -> void:
 	layer = 10
 	_build_coin_row()
-	_build_hotbar()
 
 	# Autoloads are resolved through the tree rather than as bare identifiers, so
 	# this script still compiles under --script where autoloads are not set up.
@@ -91,34 +81,8 @@ func _ready() -> void:
 		state.coins_changed.connect(_on_coins_changed)
 		_on_coins_changed(state.coins)
 	var inv := tree.root.get_node_or_null("Inventory")
-	if inv != null and not inv.inventory_changed.is_connected(_refresh_slots):
-		inv.inventory_changed.connect(_refresh_slots)
-
-
-func _build_hotbar() -> void:
-	# Centred along the bottom, so it can never collide with the top-left hearts
-	# or the coin row at any window size.
-	hotbar.alignment = BoxContainer.ALIGNMENT_CENTER
-	hotbar.add_theme_constant_override("separation", SLOT_GAP)
-	var anchor := Control.new()
-	anchor.name = "HotbarAnchor"
-	anchor.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	anchor.offset_top = -(SLOT_ICON.get_height() * SLOT_SCALE + HOTBAR_MARGIN)
-	anchor.offset_bottom = -HOTBAR_MARGIN
-	anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(anchor)
-	hotbar.get_parent().remove_child(hotbar)
-	anchor.add_child(hotbar)
-	hotbar.anchors_preset = Control.PRESET_FULL_RECT
-	for i in SLOT_COUNT:
-		var slot := TextureRect.new()
-		slot.texture = SLOT_ICON
-		slot.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		slot.custom_minimum_size = Vector2(
-			SLOT_ICON.get_width() * SLOT_SCALE,
-			SLOT_ICON.get_height() * SLOT_SCALE)
-		slot.tooltip_text = "slot %d" % (i + 1)
-		hotbar.add_child(slot)
+	# The Inventory autoload is left in place for future use, but nothing here
+	# listens to it any more: with no slots there is nothing to refresh.
 
 
 func _on_coins_changed(current: int) -> void:
@@ -135,10 +99,5 @@ func _pop() -> void:
 		Vector2.ONE * COIN_SCALE, 0.11)
 
 
-func _refresh_slots(slots: Array) -> void:
-	for i in mini(slots.size(), hotbar.get_child_count()):
-		var slot := hotbar.get_child(i) as TextureRect
-		if slot != null and slots[i] != "":
-			slot.modulate = Color(1, 1, 1, 1)
-		elif slot != null:
-			slot.modulate = Color(1, 1, 1, 0.45)
+func _unused() -> void:
+	pass

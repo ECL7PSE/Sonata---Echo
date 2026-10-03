@@ -20,6 +20,22 @@ extends Area2D
 var _arm_left := 0.0
 ## How much of the launch arc is left. The coin moves while this is positive.
 var _launch_left := 0.45
+## Arc height in LOCAL pixels, applied to the sprite only.
+const BOUNCE_HEIGHT := 6.0
+var _bounce_t := 0.0
+## One pickup, one payout. Both entry paths can race.
+var _taken := false
+
+
+## Polls for a player already standing on the coin when the arm delay ends.
+##
+## body_entered only fires on a NEW overlap. A player who walked onto a coin
+## during the 0.3s arm delay would otherwise never trigger it.
+func _try_collect_overlaps() -> void:
+	for body in get_overlapping_bodies():
+		if body != null and body.has_method("take_damage"):
+			_collect(body)
+			return
 var _settling := false
 
 
@@ -29,38 +45,63 @@ func _ready() -> void:
 	collision_layer = Layers.PICKUP
 	collision_mask = Layers.pickup_mask()
 	_arm_left = arm_delay
-	area_entered.connect(_on_area_entered)
+	# body_entered, NOT area_entered. The player is a CharacterBody2D, and an
+	# Area2D reports body_entered for a PhysicsBody2D - listening for
+	# area_entered meant the player could never trigger a pickup at all.
+	body_entered.connect(_on_body_entered)
+
+
+func _on_body_entered(body: Node2D) -> void:
+	if _arm_left > 0.0 or body == null:
+		return
+	if body.has_method("take_damage"):
+		_collect(body)
+
+
+func _collect(_body: Node2D) -> void:
+	if _taken:
+		return
+	_taken = true
+	var state := _game_state()
+	if state != null:
+		state.add_coins(1)
+	_pop()
+	queue_free()
 
 
 func _physics_process(delta: float) -> void:
 	if _arm_left > 0.0:
 		_launch_left -= delta
 		if _launch_left <= 0.0:
-			_settling = true
+			# The arm delay just expired. A player standing ON a coin never
+			# generates a body_entered, so the overlap is polled here.
+			_try_collect_overlaps()
 
-	# An Area2D is not a physics body, so nothing moves it for us: the launch arc
-	# and the settle are applied to `position` directly. Once settled it stops
-	# moving entirely, so the coin rests on an exact pixel rather than creeping
-	# forever with a sub-pixel velocity.
+	# The bounce, applied to the SPRITE ONLY.
+	#
+	# This used to move the coin's own `position`, which drags the
+	# CollisionShape2D up with it: the pickup shape arced through the air and
+	# came to rest wherever it landed, so the player walked under it and never
+	# collected anything. The root now only ever moves along the floor, the arc
+	# is the sprite's offset, and it is zeroed when the bounce ends so the art
+	# sits exactly on its collider.
 	if _launch_left > 0.0:
 		var out: Vector2 = get_meta("launch", Vector2.ZERO)
 		var dir: Vector2 = out.normalized()
-		# A small arc: rise, then fall back to roughly where it started.
-		position += Vector2(dir.x * launch_speed, -dir.y * launch_speed * 0.5) * delta
-		position.y += 180.0 * delta * delta * 8.0
-	elif _settling:
-		_settling = false
+		position.x += dir.x * launch_speed * delta
+		_bounce_t += delta
+		sprite.offset.y = -sin(_bounce_t * PI) * BOUNCE_HEIGHT
+	elif sprite.offset.y != 0.0:
+		sprite.offset.y = 0.0
 
 
+## Retained only for the player's AttackArea, which is an Area2D and does
+## report area_entered. The player's BODY arrives through body_entered.
 func _on_area_entered(area: Area2D) -> void:
 	if _arm_left > 0.0 or area == null:
 		return
-	if not area.get_parent() is CharacterBody2D:
-		return
-	var state := _game_state()
-	if state != null:
-		state.add_coins(1)
-	_pop()
+	if area.get_parent() is CharacterBody2D:
+		_collect(null)
 
 
 ## The GameState autoload, looked up from the tree.

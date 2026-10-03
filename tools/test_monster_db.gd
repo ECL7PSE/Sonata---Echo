@@ -56,15 +56,21 @@ func _check_scale_rule() -> void:
 		var mult := float(DB.BODY_MULT[lower])
 		var body: Vector2i = data["body"]
 		var scale := float(data["scale"])
-		var longest := maxf(float(body.x), float(body.y)) * scale
+		# RENDERED: source x sprite scale x the 2x Dungeon scale.
+		var rendered := Vector2(float(body.x) * scale * DB.DUNGEON_SCALE,
+				float(body.y) * scale * DB.DUNGEON_SCALE)
+		var longest := maxf(rendered.x, rendered.y)
 		var target := player_h * mult
 		_ok(absf(longest - target) <= 0.05,
-			"%s longest visible dimension is %.2fpx, expected %.2fpx "
+			"%s renders %.2fpx on its longest side, expected %.2fpx "
 			% [key, longest, target]
 			+ "(%.2fx player)" % mult)
-		print("scale %-12s %.4f  body %dx%d -> %.1fx%.1f on screen  (%.2fx player)"
-				% [key, scale, body.x, body.y,
-				float(body.x) * scale, float(body.y) * scale, mult])
+		_ok(rendered.x <= player_h * DB.MAX_W_MULT + 0.05,
+			"%s renders %.2fpx wide, over the %.2fpx cap"
+					% [key, rendered.x, player_h * DB.MAX_W_MULT])
+		print("size %-12s scale %.4f  src %dx%d -> %.1fx%.1f RENDERED  "
+				% [key, scale, body.x, body.y, rendered.x, rendered.y]
+				+ "(%.2fx player)" % mult)
 	# The dormant mimic is exempt: it IS a chest and stays pixel-identical.
 	var dormant: Dictionary = DB.MIMIC["sheets"]["dormant"]
 	_ok(float(DB.MIMIC["dormant_scale"]) == 1.0,
