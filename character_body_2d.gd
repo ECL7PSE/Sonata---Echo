@@ -280,6 +280,10 @@ func _animate_walk(delta):
 
 	icon.frame = anim_frame * 4 + col
 
+## Health removed by one slash. Enemies read this rather than hardcoding 2, so
+## buffing the sword is a single change here.
+@export var slash_damage := 2
+
 func do_attack():
 	is_attacking = true
 	velocity = Vector2.ZERO

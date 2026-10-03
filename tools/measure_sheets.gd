@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## One-shot: measures every monster sheet from real pixel data.
 ##
 ##   godot --headless --path . --script res://tools/measure_sheets.gd
@@ -35,6 +35,10 @@ const MIMIC_CLOSED_W := 16.0
 const MIMIC_CLOSED_H := 15.0
 
 ## monster, animation key, sheet file, does this sheet define the body size.
+## A file starting with "res://" is used verbatim; anything else is resolved
+## under BASE. That is how the mimic's dormant pose borrows the REAL chest art
+## instead of the mimic's own closed chest, so a dormant mimic and a real chest
+## are literally the same sprite rather than two similar ones.
 const SHEETS := [
 	["rat", "idle", "Rat/idle", true],
 	["rat", "walk", "Rat/run", false],
@@ -66,7 +70,9 @@ const SHEETS := [
 	["goblin", "attack", "Goblin/Attack", false],
 	["goblin", "hurt", "Goblin/Take Hit", false],
 	["goblin", "death", "Goblin/Death", false],
-	["mimic", "dormant", "Mimic/Idle_closed", true],
+	["mimic", "dormant",
+			"res://Assets/Dungeon/dungeon_V.1.0.0_nyknck/Chest/C001/C001_01.png",
+			true],
 	["mimic", "opening", "Mimic/opening", false],
 	["mimic", "idle_open", "Mimic/idle_open", false],
 	["mimic", "transform", "Mimic/transform", false],
@@ -103,7 +109,9 @@ func _initialize() -> void:
 		var anim: String = row[1]
 		var file: String = row[2]
 		var is_body: bool = row[3]
-		var path: String = BASE + file + ".png"
+		var path: String = row[2]
+		if not path.begins_with("res://"):
+			path = BASE + path + ".png"
 		if not ResourceLoader.exists(path):
 			print("%-12s %-17s MISSING" % [monster, anim])
 			continue
@@ -127,8 +135,9 @@ func _initialize() -> void:
 					(b.x + b.z) * 0.5, float(b.w)])
 		if is_body:
 			body[monster] = boxes[0]
-		tables.append({"monster": monster, "anim": anim, "fw": fw, "fh": fh,
-				"count": count, "boxes": boxes})
+		tables.append({"monster": monster, "anim": anim, "file": file,
+				"path": path, "fw": fw, "fh": fh, "count": count,
+				"boxes": boxes})
 
 	_generate(body, tables)
 
@@ -158,8 +167,10 @@ func _generate(body: Dictionary, tables: Array) -> void:
 	print("=== SCALE + ANCHOR (bottom-centre pinned to node origin) ===")
 	var scales: Dictionary = {}
 	var offsets: Dictionary = {}
+	var sizes: Dictionary = {}
 	for monster in body.keys():
 		var b: Vector4i = body[monster]
+		sizes[monster] = Vector2i(b.z - b.x + 1, b.w - b.y + 1)
 		var bw := float(b.z - b.x + 1)
 		var bh := float(b.w - b.y + 1)
 		var scale: float
@@ -197,7 +208,8 @@ func _generate(body: Dictionary, tables: Array) -> void:
 				drift = maxf(drift, landed.length())
 			var mine_sheet := {
 				"anim": t["anim"], "count": t["count"], "fw": fw, "fh": fh,
-				"per_frame": per_frame, "shared": shared, "drift": drift,
+				"file": t["path"], "per_frame": per_frame, "shared": shared,
+				"drift": drift,
 			}
 			if drift > 1.0:
 				_needs_per_frame.append("%s/%s (%.2f px)"
@@ -213,7 +225,7 @@ func _generate(body: Dictionary, tables: Array) -> void:
 	else:
 		for n in _needs_per_frame:
 			print("  " + n)
-	_write_db(scales, offsets)
+	_write_db(scales, offsets, sizes)
 ## the measured one, so the file is generated rather than transcribed.
 const STATS := {
 "rat": {"hp": 4, "dmg": 1, "spd": 86.0, "coins": [1, 3]},
@@ -227,26 +239,9 @@ const STATS := {
 }
 const DETECT_RANGE := 120.0
 const ATTACK_COOLDOWN := 1.0
-const SHEET_PATHS := {
-"rat": ["Rat/idle", "Rat/run", "Rat/attack_bite", "Rat/hurt", "Rat/rat-death"],
-"slime": ["Slime/idle", "Slime/walk", "Slime/attack", "Slime/hurt",
-		"Slime/death"],
-"bat": ["Bat/fly", "Bat/fly", "Bat/attack", "Bat/hurt", "Bat/death"],
-"mushroom": ["Mushroom/Idle", "Mushroom/Run", "Mushroom/Attack",
-		"Mushroom/Take Hit", "Mushroom/Death"],
-"flying_eye": ["Flying eye/Flight", "Flying eye/Flight",
-		"Flying eye/Attack", "Flying eye/Take Hit", "Flying eye/Death"],
-"goblin": ["Goblin/Idle", "Goblin/Run", "Goblin/Attack",
-		"Goblin/Take Hit", "Goblin/Death"],
-"mimic": ["Mimic/Idle_closed", "Mimic/opening", "Mimic/idle_open",
-		"Mimic/transform", "Mimic/idle_transformed", "Mimic/walk",
-		"Mimic/attack_1", "Mimic/hurt", "Mimic/death"],
-"skeleton": ["Skeleton/Idle", "Skeleton/Walk", "Skeleton/Attack",
-		"Skeleton/Take Hit", "Skeleton/Death"],
-}
 
 
-func _write_db(scales: Dictionary, offsets: Dictionary) -> void:
+func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary) -> void:
 	var out := PackedStringArray()
 	out.append("class_name MonsterDB")
 	out.append("extends RefCounted")
@@ -268,7 +263,6 @@ func _write_db(scales: Dictionary, offsets: Dictionary) -> void:
 	for monster in STATS.keys():
 		var s: Dictionary = STATS[monster]
 		var rows: Array = offsets[monster]
-		var paths: Array = SHEET_PATHS[monster]
 		out.append("## %s" % monster)
 		out.append("const %s := {" % monster.to_upper())
 		out.append("\t\"hp\": %d," % int(s["hp"]))
@@ -277,17 +271,26 @@ func _write_db(scales: Dictionary, offsets: Dictionary) -> void:
 		out.append("\t\"coin_min\": %d," % int(s["coins"][0]))
 		out.append("\t\"coin_max\": %d," % int(s["coins"][1]))
 		out.append("\t\"scale\": %.4f," % float(scales[monster]))
+		out.append("\t\"body\": Vector2i(%d, %d),   # visible body, source px"
+				% [int(sizes[monster].x), int(sizes[monster].y)])
 		out.append("\t\"sheets\": {")
 		for i in rows.size():
 			var r: Dictionary = rows[i]
 			out.append("\t\t\"%s\": {" % r["anim"])
-			out.append("\t\t\t\"path\": \"%s%s.png\","
-					% [BASE, paths[i]])
+			out.append("\t\t\t\"path\": \"%s\"," % r["file"])
 			out.append("\t\t\t\"frames\": %d," % int(r["count"]))
 			out.append("\t\t\t\"frame_size\": Vector2i(%d, %d),"
 					% [int(r["fw"]), int(r["fh"])])
 			out.append("\t\t\t\"offset\": Vector2(%d, %d),"
 					% [int(r["shared"].x), int(r["shared"].y)])
+			# The swing only counts as connected during these frames. The middle
+			# band of the sheet: the wind-up before it is deliberately harmless so
+			# a committed enemy can still be interrupted, and the follow-through
+			# after it is over.
+			if r["anim"] == "attack":
+				var n := int(r["count"])
+				out.append("\t\t\t\"damage_frames\": Vector2i(%d, %d),"
+						% [int(round(n * 0.35)), int(round(n * 0.65))])
 			if float(r["drift"]) > 1.0:
 				var ps: Array[String] = []
 				for v in r["per_frame"]:

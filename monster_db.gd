@@ -23,6 +23,7 @@ const RAT := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 2.0000,
+	"body": Vector2i(40, 20),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Rat/idle.png",
@@ -42,6 +43,7 @@ const RAT := {
 			"frames": 12,
 			"frame_size": Vector2i(70, 70),
 			"offset": Vector2(3, -9),
+			"damage_frames": Vector2i(4, 8),
 			"offsets": [Vector2(3, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(-3, -9), Vector2(-2, -9), Vector2(-2, -9), Vector2(-2, -9), Vector2(0, -9)],
 		},
 		"hurt": {
@@ -69,6 +71,7 @@ const SLIME := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 2.2222,
+	"body": Vector2i(44, 18),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Slime/idle.png",
@@ -88,6 +91,7 @@ const SLIME := {
 			"frames": 19,
 			"frame_size": Vector2i(156, 156),
 			"offset": Vector2(1, -8),
+			"damage_frames": Vector2i(7, 12),
 			"offsets": [Vector2(1, -8), Vector2(2, -8), Vector2(3, -8), Vector2(5, -8), Vector2(5, -8), Vector2(5, -8), Vector2(5, -8), Vector2(5, -8), Vector2(5, -8), Vector2(-19, -8), Vector2(-28, -8), Vector2(-30, -8), Vector2(-31, -8), Vector2(-32, -8), Vector2(-33, -8), Vector2(-24, -8), Vector2(-22, -8), Vector2(-17, -8), Vector2(-8, -8)],
 		},
 		"hurt": {
@@ -114,6 +118,7 @@ const BAT := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 1.2121,
+	"body": Vector2i(54, 33),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Bat/fly.png",
@@ -134,6 +139,7 @@ const BAT := {
 			"frames": 11,
 			"frame_size": Vector2i(87, 87),
 			"offset": Vector2(-2, -18),
+			"damage_frames": Vector2i(4, 7),
 			"offsets": [Vector2(-2, -18), Vector2(-4, -19), Vector2(-5, -20), Vector2(-4, -21), Vector2(-3, -21), Vector2(-3, -21), Vector2(-4, -20), Vector2(-5, -19), Vector2(-16, -23), Vector2(-11, -23), Vector2(-3, -18)],
 		},
 		"hurt": {
@@ -161,6 +167,7 @@ const MUSHROOM := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 1.0811,
+	"body": Vector2i(23, 37),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Mushroom/Idle.png",
@@ -180,6 +187,7 @@ const MUSHROOM := {
 			"frames": 8,
 			"frame_size": Vector2i(150, 150),
 			"offset": Vector2(0, -25),
+			"damage_frames": Vector2i(3, 5),
 			"offsets": [Vector2(0, -25), Vector2(3, -25), Vector2(10, -25), Vector2(10, -25), Vector2(10, -25), Vector2(8, -25), Vector2(-6, -25), Vector2(-14, -25)],
 		},
 		"hurt": {
@@ -207,6 +215,7 @@ const FLYING_EYE := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 1.2903,
+	"body": Vector2i(41, 31),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Flying eye/Flight.png",
@@ -227,6 +236,7 @@ const FLYING_EYE := {
 			"frames": 8,
 			"frame_size": Vector2i(150, 150),
 			"offset": Vector2(-2, -16),
+			"damage_frames": Vector2i(3, 5),
 			"offsets": [Vector2(-2, -16), Vector2(-2, -16), Vector2(2, -12), Vector2(2, -12), Vector2(2, -11), Vector2(2, -12), Vector2(-3, -15), Vector2(-3, -15)],
 		},
 		"hurt": {
@@ -254,6 +264,7 @@ const GOBLIN := {
 	"coin_min": 1,
 	"coin_max": 3,
 	"scale": 1.2222,
+	"body": Vector2i(33, 36),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Goblin/Idle.png",
@@ -273,6 +284,7 @@ const GOBLIN := {
 			"frames": 8,
 			"frame_size": Vector2i(150, 150),
 			"offset": Vector2(1, -25),
+			"damage_frames": Vector2i(3, 5),
 		},
 		"hurt": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Goblin/Take Hit.png",
@@ -297,13 +309,14 @@ const MIMIC := {
 	"speed": 90.0,
 	"coin_min": 3,
 	"coin_max": 6,
-	"scale": 0.5161,
+	"scale": 1.0000,
+	"body": Vector2i(16, 15),   # visible body, source px
 	"sheets": {
 		"dormant": {
-			"path": "res://Assets/Monsters_Creatures_Fantasy/Mimic/Idle_closed.png",
+			"path": "res://Assets/Dungeon/dungeon_V.1.0.0_nyknck/Chest/C001/C001_01.png",
 			"frames": 1,
-			"frame_size": Vector2i(146, 146),
-			"offset": Vector2(0, -9),
+			"frame_size": Vector2i(24, 24),
+			"offset": Vector2(1, -11),
 		},
 		"opening": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Mimic/opening.png",
@@ -344,6 +357,7 @@ const MIMIC := {
 			"frames": 14,
 			"frame_size": Vector2i(146, 146),
 			"offset": Vector2(-4, -9),
+			"damage_frames": Vector2i(5, 9),
 			"offsets": [Vector2(-4, -9), Vector2(-4, -9), Vector2(-3, -9), Vector2(2, -9), Vector2(3, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(4, -9), Vector2(2, -9), Vector2(-2, -9), Vector2(-13, -9)],
 		},
 		"hurt": {
@@ -371,6 +385,7 @@ const SKELETON := {
 	"coin_min": 6,
 	"coin_max": 10,
 	"scale": 0.9412,
+	"body": Vector2i(45, 51),   # visible body, source px
 	"sheets": {
 		"idle": {
 			"path": "res://Assets/Monsters_Creatures_Fantasy/Skeleton/Idle.png",
@@ -389,6 +404,7 @@ const SKELETON := {
 			"frames": 8,
 			"frame_size": Vector2i(150, 150),
 			"offset": Vector2(-7, -25),
+			"damage_frames": Vector2i(3, 5),
 			"offsets": [Vector2(-7, -25), Vector2(-6, -25), Vector2(5, -25), Vector2(5, -25), Vector2(5, -25), Vector2(2, -25), Vector2(-33, -25), Vector2(-33, -25)],
 		},
 		"hurt": {

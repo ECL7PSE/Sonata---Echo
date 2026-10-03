@@ -17,6 +17,10 @@ const DATA := {
 }
 ## A frame's bottom-centre must land this close to the sprite origin.
 const ANCHOR_TOLERANCE := 1.0
+## Comparisons are done on values that were rounded to integers somewhere, so
+## an exact `<= 1.0` can fail on 1.0000000001. This keeps the limit at a real
+## 1px instead of quietly widening it.
+const EPS := 0.001
 ## The dormant mimic must read as the same object as a real chest.
 const C001_PATH := "res://Assets/Dungeon/dungeon_V.1.0.0_nyknck/Chest/C001/C001_01.png"
 
@@ -72,42 +76,50 @@ func _check_animations_present() -> void:
 				"%s should not have mimic-only stages" % key)
 
 
-## The closed mimic chest and the real chest must be the same size on screen.
+## The dormant mimic must BE the real chest, not something that resembles it.
+##
+## Both poses are the same PNG at scale 1, so a player who has learned to read
+## chests cannot tell them apart until the burst. The mimic's own closed-chest art
+## was discarded for this reason: it measured 31x20 and could never match C001's
+## 16x15 under uniform scale.
 func _check_mimic_matches_chest() -> void:
 	var chest := _visible_box(C001_PATH)
 	var mimic: Dictionary = DB.MIMIC["sheets"]["dormant"]
+	_ok(mimic["path"] == C001_PATH,
+		"the dormant mimic does not use C001_01 (got %s)" % mimic["path"])
+	_ok(float(DB.MIMIC["scale"]) == 1.0,
+		"the dormant mimic is scaled %.4f; it must be 1.0 to be pixel-identical"
+		% float(DB.MIMIC["scale"]))
 	var mimg := _image(mimic["path"])
 	var fw: int = mimic["frame_size"].x
 	var mbox := _bbox(mimg, 0, fw, fw)
-	var scale: float = DB.MIMIC["scale"]
-	var mw := (mbox.z - mbox.x + 1) * scale
-	var mh := (mbox.w - mbox.y + 1) * scale
 	var cw := float(chest.z - chest.x + 1)
 	var ch := float(chest.w - chest.y + 1)
-	print("C001 chest     : %.0fx%.0f px on screen" % [cw, ch])
-	print("MIMIC dormant  : %.1fx%.1f px on screen (scale %.4f)"
-			% [mw, mh, scale])
-	_ok(absf(mw - cw) <= 1.0,
-		"dormant mimic is %.1fpx wide, C001 is %.0fpx" % [mw, cw])
-	# The HEIGHT is the open question and is deliberately left failing until it
-	# is decided. The mimic's closed chest is 31x20 in the source (aspect 1.55)
-	# while C001 is 16x15 (aspect 1.07), so NO uniform scale hits both. The db
-	# currently matches WIDTH, which guarantees a dormant mimic never looks
-	# larger than a real chest, at the cost of reading a little flatter.
-	# The alternatives are: match height instead (23.3 x 15.0), or scale
-	# non-uniformly to an exact 16 x 15 and accept ~1.46x vertical distortion.
-	if absf(mh - ch) > 1.0:
-		var src_w := float(mbox.z - mbox.x + 1)
-		var src_h := float(mbox.w - mbox.y + 1)
-		# Matching height instead of width: 31 * (15/20).
-		var by_height := src_w * (ch / src_h)
-		_fails.append("UNDECIDED: dormant mimic is %.1fpx tall, C001 is %.0fpx. "
-				% [mh, ch]
-				+ "Source is %dx%d, so uniform scale cannot match both. Choose: "
-						% [int(src_w), int(src_h)]
-				+ "width-match (current, %.1fx%.1f), height-match (%.1fx%.1f), "
-						% [mw, mh, by_height, ch]
-				+ "or non-uniform 16x15 (~1.46x vertical distortion).")
+	var mw := float(mbox.z - mbox.x + 1)
+	var mh := float(mbox.w - mbox.y + 1)
+	print("C001 chest     : %dx%d px on screen" % [int(cw), int(ch)])
+	print("MIMIC dormant  : %dx%d px on screen (scale %.2f), same sheet"
+			% [int(mw), int(mh), float(DB.MIMIC["scale"])])
+	_ok(absf(mw - cw) <= 1.0 + EPS, "dormant mimic is %dx%d, C001 is %dx%d"
+			% [int(mw), int(mh), int(cw), int(ch)])
+	_ok(absf(mh - ch) <= 1.0 + EPS, "dormant mimic is %dx%d, C001 is %dx%d"
+			% [int(mw), int(mh), int(cw), int(ch)])
+
+	# The frame the burst starts on is the hinge between the two looks, so it
+	# has to land on the same anchor or the chest jumps at the moment of waking.
+	var opening: Dictionary = DB.MIMIC["sheets"]["opening"]
+	var oimg := _image(opening["path"])
+	var ofw: int = opening["frame_size"].x
+	var ofh: int = opening["frame_size"].y
+	var ob := _bbox(oimg, 0, ofw, ofh)
+	var obc := Vector2((ob.x + ob.z) * 0.5, float(ob.w))
+	var ooff: Vector2 = opening["offset"]
+	var olanded := Vector2(obc.x - ofw * 0.5, obc.y - ofh * 0.5) + ooff
+	print("MIMIC opening  : f0 bbox %dx%d, bottom-centre error %.2f px"
+			% [ob.z - ob.x + 1, ob.w - ob.y + 1, olanded.length()])
+	_ok(olanded.length() <= ANCHOR_TOLERANCE + EPS,
+		"mimic opening f0 bottom-centre is %.2fpx off the anchor"
+		% olanded.length())
 
 
 ## The heart of the file: every frame of every sheet must sit on the anchor.
@@ -153,9 +165,15 @@ func _check_all_anchored() -> void:
 				if err > worst_overall:
 					worst_overall = err
 					worst_where = "%s/%s f%d" % [key, anim, f]
-				_ok(err <= ANCHOR_TOLERANCE,
+				_ok(err <= ANCHOR_TOLERANCE + EPS,
 					"%s/%s frame %d bottom-centre is %.2fpx off the anchor"
 					% [key, anim, f, err])
+				# Flipped, the content walks the other way, so the x has to be
+				# negated or every left-facing enemy drifts off its anchor. This
+				# mirrors Enemy.frame_offset, which negates at runtime.
+				_ok(absf(landed.x) <= ANCHOR_TOLERANCE + EPS,
+					"%s/%s frame %d is %.2fpx off the anchor with flip_h set"
+					% [key, anim, f, absf(landed.x)])
 	print("frames anchored: %d across every sheet" % per_sheet)
 	print("worst anchor   : %.2f px  (%s)" % [worst_overall, worst_where])
 
