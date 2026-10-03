@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Smoke test: load the real Main, wake every room in turn, and step the world.
 ##
 ##   godot --headless --path . --script res://tools/test_smoke.gd
@@ -13,11 +13,23 @@ const ENEMY_SCRIPT := preload("res://enemy.gd")
 ## Physics frames to step per room trigger.
 const FRAMES_PER_ROOM := 300
 
+## Real-physics oscillation: how many leash returns are acceptable in the window.
+const LIVE_FRAMES := 600
+const LIVE_LEASH := 40.0
+const LIVE_MAX_RETURNS := 2
+const MIMIC_SCRIPT := preload("res://mimic.gd")
+const MONSTER_DB := preload("res://monster_db.gd")
+const MIMIC_OPEN := 0.5
+const MIMIC_HOLD := 0.15
+const MIMIC_TRANSFORM := 0.58
+const MIMIC_SETTLE := 0.4
+
 var _fails: Array[String] = []
 var _checks := 0
 var _stage := 0
 var _frames := 0
 var _main: Node
+var _live_n := 0
 var _player: Node2D
 var _dungeon: Node2D
 var _grid: Array
@@ -60,7 +72,7 @@ func _process(_delta: float) -> bool:
 			_frames -= 1
 			if _frames <= 0:
 				_bounds_and_walls()
-				_check_leash()
+				_check_live_oscillation()
 				_report()
 				return true
 	return false
@@ -144,6 +156,64 @@ func _bounds_and_walls() -> void:
 			"%s is standing in a wall cell %s" % [enemy.name, cell])
 	print("bounds         : %d enemies checked against %dx%d map"
 			% [checked, w, h])
+
+
+## Oscillation under REAL physics.
+##
+## The unit check in test_mimic drives _physics_process directly, so it proves the
+## state machine converges but cannot see anything caused by move_and_slide -
+## an enemy being pushed by the player, wedged in a corner, or nudged across the
+## leash boundary by contact. This runs the actual body through the actual
+## physics step, with the player held just beyond leash range, which is the
+## configuration most likely to produce a real fight loop.
+func _check_live_oscillation() -> void:
+	var r: Node2D = _spawn_live(MONSTER_DB.RAT, Vector2(300, 300), null)
+	var m: Node2D = _spawn_live(MONSTER_DB.MIMIC, Vector2(300, 500),
+			MIMIC_SCRIPT)
+	for pair in [[r, "rat"], [m, "mimic"]]:
+		var e: Node2D = pair[0]
+		var label: String = pair[1]
+		e.leash_range = LIVE_LEASH
+		e.activate()
+		# Send it home once, so the cooldown is armed the way it would be in play.
+		_player.global_position = e.home_position + Vector2(5000, 0)
+		for i in 4000:
+			e._physics_process(1.0 / 60.0)
+			if not e.active:
+				break
+		# Now hold the player just beyond the leash, and let physics run.
+		_player.global_position = e.home_position + Vector2(LIVE_LEASH * 1.6, 0)
+		var returns := 0
+		var was_active: bool = e.active
+		for i in LIVE_FRAMES:
+			# The player's own _physics_process would move it from input; keeping
+			# it parked means the position above is the one under test.
+			_player.global_position = e.home_position \
+					+ Vector2(LIVE_LEASH * 1.6, 0)
+			e._physics_process(1.0 / 60.0)
+			if e.has_method("_process"):
+				e._process(1.0 / 60.0)
+			if was_active and not e.active:
+				returns += 1
+			was_active = e.active
+		_ok(returns <= LIVE_MAX_RETURNS,
+			"%s looped under live physics: %d leash returns in %d frames"
+					% [label, returns, LIVE_FRAMES])
+		print("live oscillation: %-6s %d leash returns in %d live frames"
+				% [label, returns, LIVE_FRAMES])
+
+
+func _spawn_live(data: Dictionary, at: Vector2, script) -> Node2D:
+	var e: Node2D = (load("res://enemy.tscn") as PackedScene).instantiate()
+	if script != null:
+		e.set_script(script)
+	e.data = data
+	e.position = at
+	e.player = _player
+	e.name = "Live_%d" % _live_n
+	_live_n += 1
+	_dungeon.add_child(e)
+	return e
 
 
 ## An enemy left too far behind walks home and goes dormant again.

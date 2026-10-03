@@ -168,128 +168,151 @@ func _check_a_proximity() -> void:
 ## became a chest again. Re-engagement happens either through activate() (a room
 ## trigger re-entry) or simply by the player walking back into detect range.
 func _check_leash_reengage() -> void:
-	# A plain enemy: leashed, then the player returns to detect range.
-	var e := _make_rat()
-	e.activate()
-	e.leash_range = 32.0
-	_player.global_position = e.home_position + Vector2(5000, 0)
-	for i in 4000:
-		e._physics_process(1.0 / 60.0)
-		if not e.active:
-			break
-	_ok(not e.active, "the rat never leashed")
-	_ok(e.state == MIMIC_SCRIPT.State.IDLE, "a leashed rat is not IDLE")
-	# Back within detect range, with no trigger re-entry at all.
-	e.leash_range = 100000.0
-	_player.global_position = e.home_position + Vector2(20, 0)
-	e._physics_process(1.0 / 60.0)
-	_ok(e.active, "a leashed rat did not re-engage when the player returned")
-	_ok(e.state != MIMIC_SCRIPT.State.IDLE,
-		"a re-engaged rat is still IDLE (state %d)" % e.state)
-
-	# The mimic: leashed, still awake, re-engaged by activate() and by range.
-	var m := _make_mimic()
-	m._burst()
-	_run(m, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
-			+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
-	_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE, "mimic did not reach AWAKE")
-	m.leash_range = 32.0
-	_player.global_position = m.home_position + Vector2(5000, 0)
-	for i in 4000:
-		m._physics_process(1.0 / 60.0)
-		if not m.active:
-			break
-	_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE,
-		"a leashed mimic went back to DORMANT (chain %d)" % m.chain)
-	_ok(not m.active, "the leashed mimic stayed active forever")
-	# Re-engage via activate(), which is the room-trigger path.
-	m.activate()
-	_ok(m.active, "a leashed awake mimic did not re-engage via activate()")
-	# And via detect range, with no activate() call.
-	var m2 := _make_mimic()
-	m2._burst()
-	_run(m2, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
-			+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
-	m2.leash_range = 32.0
-	_player.global_position = m2.home_position + Vector2(5000, 0)
-	for i in 4000:
-		m2._physics_process(1.0 / 60.0)
-		if not m2.active:
-			break
-	m2.leash_range = 100000.0
-	_player.global_position = m2.home_position + Vector2(20, 0)
-	m2._physics_process(1.0 / 60.0)
-	_ok(m2.active,
-		"a leashed mimic ignored a player standing 20px away")
-	_ok(m2.chain == MIMIC_SCRIPT.Chain.AWAKE,
-		"a re-engaged mimic fell back to DORMANT")
-	# A DORMANT mimic must still ignore both paths.
-	var d := _make_mimic()
-	d.activate()
-	_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
-		"activate() woke a dormant mimic")
-	_player.global_position = d.global_position + Vector2(10, 0)
-	d._physics_process(1.0 / 60.0)
-	_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
-		"a dormant mimic re-engaged on proximity")
-	print("leash re-engage: rat + mimic both re-engage; dormant still ignores both")
-
-
-## It must not oscillate: re-engage, leash, re-engage, leash.
-##
-## The bad case is a player standing just outside leash range but still inside
-## the enemy's detect range. Without hysteresis the enemy re-engages, chases,
-## immediately exceeds the leash, walks back, re-engages again - and the state
-## counter climbs without bound. Both species are checked, because the mimic's
-## own IDLE handling has to inherit the same gate.
-func _check_no_oscillation() -> void:
-	for label in ["rat", "mimic"]:
-		var e: Node2D = _make_rat() if label == "rat" else _make_mimic()
-		if label == "mimic":
-			e._burst()
-			_run(e, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
-					+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME
-					+ MARGIN)
-		# Player parked just past the leash radius from HOME, and the enemy sent
-		# home first so it starts IDLE with the cooldown armed.
+		# A plain enemy: leashed, then the player returns to detect range.
+		var e := _make_rat()
 		e.activate()
-		e.leash_range = 40.0
+		e.leash_range = 32.0
 		_player.global_position = e.home_position + Vector2(5000, 0)
 		for i in 4000:
 			e._physics_process(1.0 / 60.0)
 			if not e.active:
 				break
-		_ok(not e.active, "%s never reached home" % label)
-		# Now the oscillating position: 60px from home, inside the 120px detect.
-		_player.global_position = e.home_position + Vector2(60, 0)
-		var transitions := 0
-		var was_active: bool = e.active
-		for i in 300:
+		_ok(not e.active, "the rat never leashed")
+		_ok(e.state == MIMIC_SCRIPT.State.IDLE, "a leashed rat is not IDLE")
+		# Back within detect range, with no trigger re-entry at all.
+		# leash_range is left at its small value: re-engage legitimately requires the
+		# player to be inside leash range of HOME, so the "player returned" case has
+		# to be the player having genuinely come back to the room.
+		_player.global_position = e.home_position + Vector2(20, 0)
+		# NOT immediate. Re-engage is deliberately delayed by `reengage_delay`
+		# so an enemy cannot re-arm the instant it sits down. Assert the delay
+		# first, then let it expire.
+		e._physics_process(1.0 / 60.0)
+		_ok(not e.active,
+			"a leashed rat re-engaged instantly, with no settle delay")
+		for i in 90:
 			e._physics_process(1.0 / 60.0)
-			# Only the mimic defines _process; Enemy deliberately has none.
-			if e.has_method("_process"):
-				e._process(1.0 / 60.0)
-			if e.active != was_active:
-				transitions += 1
+		_ok(e.active, "a leashed rat did not re-engage when the player returned")
+		_ok(e.state != MIMIC_SCRIPT.State.IDLE,
+			"a re-engaged rat is still IDLE (state %d)" % e.state)
+
+		# The mimic: leashed, still awake, re-engaged by activate() and by range.
+		var m := _make_mimic()
+		m._burst()
+		_run(m, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+				+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
+		_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE, "mimic did not reach AWAKE")
+		m.leash_range = 32.0
+		_player.global_position = m.home_position + Vector2(5000, 0)
+		for i in 4000:
+			m._physics_process(1.0 / 60.0)
+			if not m.active:
+				break
+		_ok(m.chain == MIMIC_SCRIPT.Chain.AWAKE,
+			"a leashed mimic went back to DORMANT (chain %d)" % m.chain)
+		_ok(not m.active, "the leashed mimic stayed active forever")
+		# Re-engage via activate(), which is the room-trigger path.
+		m.activate()
+		_ok(m.active, "a leashed awake mimic did not re-engage via activate()")
+		# And via detect range, with no activate() call. The player comes back to the
+		# room (inside leash of home), which is what re-engagement now requires.
+		var m2 := _make_mimic()
+		m2._burst()
+		_run(m2, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+				+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME + MARGIN)
+		m2.leash_range = 32.0
+		_player.global_position = m2.home_position + Vector2(5000, 0)
+		for i in 4000:
+			m2._physics_process(1.0 / 60.0)
+			if not m2.active:
+				break
+		_player.global_position = m2.home_position + Vector2(20, 0)
+		for i in 90:
+			m2._physics_process(1.0 / 60.0)
+		_ok(m2.active,
+			"a leashed mimic ignored a player standing 20px away")
+		_ok(m2.chain == MIMIC_SCRIPT.Chain.AWAKE,
+			"a re-engaged mimic fell back to DORMANT")
+		# A DORMANT mimic must still ignore both paths.
+		var d := _make_mimic()
+		d.activate()
+		_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
+			"activate() woke a dormant mimic")
+		_player.global_position = d.global_position + Vector2(10, 0)
+		d._physics_process(1.0 / 60.0)
+		_ok(d.chain == MIMIC_SCRIPT.Chain.DORMANT,
+			"a dormant mimic re-engaged on proximity")
+		print("leash re-engage: rat + mimic both re-engage; dormant still ignores both")
+
+
+	## It must not oscillate: re-engage, chase, leash, return, repeat.
+	##
+	## Three player distances matter, and they fail differently:
+	##
+	##   just INSIDE  leash of home - the player is genuinely in the room, so a
+	##                            single re-engage is correct and expected
+	##   just BEYOND  leash of home - the killer case. Still inside DETECT of an
+	##                            enemy sitting at home, so without the home-anchored
+	##                            leash check it wakes on a loop forever
+	##   far BEYOND    leash of home - outside everything; must simply never engage
+	##
+	## The bound is on leash RETURNS, not flips, because one legitimate re-engage at
+	## the near distance is correct behaviour and should not fail the test.
+func _check_no_oscillation() -> void:
+	const FRAMES := 1200
+	const LEASH := 40.0
+	var distances := {"inside": LEASH * 0.6, "just beyond": LEASH * 1.5,
+			"far beyond": LEASH * 8.0}
+	for label in ["rat", "mimic"]:
+		for where in distances.keys():
+			var gap: float = distances[where]
+			var e: Node2D = _make_rat() if label == "rat" else _make_mimic()
+			if label == "mimic":
+				e._burst()
+				_run(e, MIMIC_SCRIPT.OPENING_TIME + MIMIC_SCRIPT.HOLD_TIME
+						+ MIMIC_SCRIPT.TRANSFORM_TIME + MIMIC_SCRIPT.SETTLE_TIME
+						+ MARGIN)
+			e.leash_range = LEASH
+			e.activate()
+			# Park the player beyond the leash so it walks home and settles.
+			_player.global_position = e.home_position + Vector2(5000, 0)
+			for i in 4000:
+				e._physics_process(1.0 / 60.0)
+				if not e.active:
+					break
+			_ok(not e.active, "%s/%s never settled at home" % [label, where])
+			# Now hold the player at the test distance for the long window.
+			_player.global_position = e.home_position + Vector2(gap, 0)
+			var leash_returns := 0
+			var was_active: bool = e.active
+			for i in FRAMES:
+				e._physics_process(1.0 / 60.0)
+				if e.has_method("_process"):
+					e._process(1.0 / 60.0)
+				if e.active and not was_active:
+					pass
+				elif was_active and not e.active:
+					leash_returns += 1
 				was_active = e.active
-		_ok(transitions <= 2,
-			"%s oscillated: %d active-state flips in 300 frames at 60px out"
-					% [label, transitions])
-		print("no oscillation : %-6s %d state flips over 300 frames at 60px"
-				% [label, transitions])
-	# And the counter really does recover once the player is properly gone.
+			_ok(leash_returns <= 1,
+				"%s at %s leash distance: %d chase-return cycles in %d frames"
+						% [label, where, leash_returns, FRAMES])
+			print("no oscillation : %-6s player %-11s %6.0fpx out -> %d cycles"
+					% [label, where, gap, leash_returns])
+	# The beyond-leash case must stay asleep even after the delay expires.
 	var e2 := _make_rat()
-	e2.activate()
 	e2.leash_range = 40.0
+	e2.activate()
 	_player.global_position = e2.home_position + Vector2(5000, 0)
 	for i in 4000:
 		e2._physics_process(1.0 / 60.0)
 		if not e2.active:
 			break
-	_ok(is_equal_approx(e2._reengage_left, 0.0)
-			or e2._reengage_left <= e2.reengage_delay,
-		"the re-engage cooldown was never armed on arrival (%.2f)"
-				% e2._reengage_left)
+	_player.global_position = e2.home_position + Vector2(60, 0)
+	for i in 1200:
+		e2._physics_process(1.0 / 60.0)
+	_ok(not e2.active,
+		"an enemy re-engaged on detect range alone, 60px beyond its leash of home")
 
 
 ## Several mimics bursting at once must not stack past the single amplitude.

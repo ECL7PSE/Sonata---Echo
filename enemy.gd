@@ -364,25 +364,32 @@ func _physics_process(delta: float) -> void:
 			# It does NOT go back to being dormant - it is still the same awake
 			# creature, it just stopped caring.
 			#
-			# HYSTERESIS. Detect range alone is not enough to re-engage, because it
-			# is measured from the ENEMY while the leash is measured from HOME. An
-			# enemy walking home is still within detect range of a player who is
-			# themselves still walking away, so it would re-engage, chase, leash,
-			# re-engage... forever. Two conditions must hold: the player is inside
-			# detect range AND inside leash range of HOME (so the fight has not
-			# started outside the room again), or the re-engage cooldown has passed.
+			# HYSTERESIS, and the invariant that stops the loop.
 			#
-			# A never-activated enemy never satisfies _has_been_activated, which
-			# is what keeps a dormant mimic and an unvisited room asleep. A dormant
-			# mimic cannot reach this branch at all: its _physics_process returns
-			# before the FSM until the chain ends.
+			# Re-engage requires ALL of:
+			#   1. it has fought before          - a dormant mimic / unvisited
+			#                                   room stays asleep
+			#   2. player within DETECT of the enemy
+			#   3. player within LEASH of HOME  - the anti-loop condition
+			#   4. the enemy is home, or the cooldown has elapsed
+			#
+			# (3) is the one that matters and it is why the other gates cannot be
+			# used on their own. Detect is measured from the ENEMY, leash from
+			# HOME, so a player lingering just past the leash radius is inside
+			# detect range of an enemy sitting at home: it wakes, chases, is
+			# instantly over the leash, returns, sleeps for `reengage_delay`,
+			# and repeats forever.
+			#
+			# An earlier version let the delay stand in for (3), which only slowed
+			# the loop down - after 1s the enemy re-engaged on detect range alone
+			# and started it again. The delay now only decides "am I settled
+			# enough to look up again", never "is the player still in the room".
 			if _has_been_activated and target != Vector2.INF:
 				var home_dist := target.distance_to(home_position)
 				var back_home := global_position.distance_to(home_position) < 4.0
 				var in_detect := dist <= _detect()
-				var settled: bool = home_dist <= leash_range \
-						or _reengage_left <= 0.0
-				if in_detect and (back_home or settled):
+				var settled: bool = back_home or _reengage_left <= 0.0
+				if in_detect and home_dist <= leash_range and settled:
 					activate()
 			velocity = Vector2.ZERO
 		State.WANDER:
