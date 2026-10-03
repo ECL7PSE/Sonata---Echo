@@ -663,7 +663,22 @@ func _drop_coins() -> void:
 	var amount := randi_range(lo, hi)
 	if boss:
 		amount = maxi(hi, 6)
-	preload("res://coin_drop.gd").drop(parent, global_position, amount)
+	preload("res://coin_drop.gd").drop(parent, global_position, amount, 34.0,
+			func(c: Vector2i) -> bool:
+					return _floor().call(c))
+
+
+## The dungeon's floor test, looked up from the tree so coin_drop.gd does not
+## need to know about the builder.
+func _floor() -> Callable:
+	var tree := get_tree()
+	if tree == null or tree.current_scene == null:
+		return func(_c: Vector2i) -> bool: return true
+	var builder := tree.current_scene.get_node_or_null("Dungeon")
+	if builder == null or not builder.has_method("_walkable"):
+		return func(_c: Vector2i) -> bool: return true
+	var grid: Array = builder.get("_grid")
+	return func(c: Vector2i) -> bool: return builder._walkable(grid, c)
 
 
 func _player_position() -> Vector2:

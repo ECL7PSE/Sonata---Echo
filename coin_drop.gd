@@ -32,7 +32,7 @@ static var _frames: SpriteFrames
 ## invisible, while every old test still passed because it only checked that a
 ## coin node existed with a collider.
 static func drop(parent: Node, origin: Vector2, count: int,
-		radius := 34.0) -> void:
+		radius := 34.0, walkable: Callable = Callable()) -> void:
 	if parent == null or count <= 0:
 		return
 	var local: Vector2 = parent.to_local(origin)
@@ -41,6 +41,9 @@ static func drop(parent: Node, origin: Vector2, count: int,
 		coin.set_script(COIN_SCRIPT)
 		coin.name = "Coin%d" % i
 		coin.position = local
+		# Lets the bounce stop at a wall instead of sliding through it.
+		if walkable.is_valid():
+			coin.set("walkable", walkable)
 		# Above the floor and props, below nothing that matters. Without this the
 		# coin drew behind the dungeon layers and looked like it had not spawned.
 		coin.z_index = 40

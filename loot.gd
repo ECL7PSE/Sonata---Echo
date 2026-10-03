@@ -85,4 +85,17 @@ func _spawn_coins() -> void:
 	# that moment makes the engine throw "Can't change this state while flushing
 	# queries" and the coins end up with no collider at all. Waiting a frame sidesteps
 	# it entirely.
-	CoinDrop.drop.call_deferred(parent, global_position, coin_count)
+	CoinDrop.drop.call_deferred(parent, global_position, coin_count, 34.0,
+			_floor())
+
+
+## The dungeon's floor test, so coins bounce off walls instead of through them.
+func _floor() -> Callable:
+	var tree := get_tree()
+	if tree == null or tree.current_scene == null:
+		return func(_c: Vector2i) -> bool: return true
+	var builder := tree.current_scene.get_node_or_null("Dungeon")
+	if builder == null or not builder.has_method("_walkable"):
+		return func(_c: Vector2i) -> bool: return true
+	var grid: Array = builder.get("_grid")
+	return func(c: Vector2i) -> bool: return builder._walkable(grid, c)

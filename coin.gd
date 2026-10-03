@@ -27,6 +27,25 @@ var _bounce_t := 0.0
 var _taken := false
 
 
+## Supplied by CoinDrop so the coin knows where the walls are.
+##
+## Without this the scatter is a straight x slide that runs straight through a
+## wall and the coin ends up outside the room or inside the masonry. The coin is
+## an Area2D, not a physics body, so nothing stops it for us.
+var _walkable: Callable = Callable()
+
+
+func set_walkable(fn: Callable) -> void:
+	_walkable = fn
+
+
+func _can_stand(p: Vector2) -> bool:
+	if not _walkable.is_valid():
+		return true
+	var cell := Vector2i(int(floor(p.x / 16.0)), int(floor(p.y / 16.0)))
+	return bool(_walkable.call(cell))
+
+
 ## Polls for a player already standing on the coin when the arm delay ends.
 ##
 ## body_entered only fires on a NEW overlap. A player who walked onto a coin
@@ -88,7 +107,16 @@ func _physics_process(delta: float) -> void:
 	if _launch_left > 0.0:
 		var out: Vector2 = get_meta("launch", Vector2.ZERO)
 		var dir: Vector2 = out.normalized()
-		position.x += dir.x * launch_speed * delta
+		# Root: floor only, and it BOUNCES off a wall rather than sliding
+		# through it. Trying the whole step first and reverting on a hit keeps
+		# the coin from ever occupying a masonry cell for even one frame.
+		var step := dir.x * launch_speed * delta
+		if _can_stand(position + Vector2(step, 0.0)):
+			position.x += step
+		elif _can_stand(position + Vector2(step * -0.5, 0.0)):
+			position.x += step * -0.5
+		else:
+			_launch_left = 0.0
 		_bounce_t += delta
 		sprite.offset.y = -sin(_bounce_t * PI) * BOUNCE_HEIGHT
 	elif sprite.offset.y != 0.0:
