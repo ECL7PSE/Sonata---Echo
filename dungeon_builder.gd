@@ -63,22 +63,33 @@ const MIN_CORRIDOR := 3
 ## The player's BODY collider, in RENDERED px. Must track the RectangleShape2D
 ## in Main.tscn.
 ##
-## MEASURED, not assumed. tools/measure_player.gd reads the alpha bounding box
-## of idle frame 4 in darkhatman_idle_sheet_64x64.png:
+## MEASURED, not assumed, in the running Main scene (tools/measure_head_cap.gd).
+## tools/measure_player.gd reads the alpha bounding box of idle frame 4 in
+## darkhatman_idle_sheet_64x64.png: the sheet is 256x256 at hframes/vframes 4,
+## so a frame is 64x64 and the ink spans y 5..47 frame px -> y -32.40..+18.00
+## rendered at scale 1.2.
 ##
-##   sheet 256x256, hframes/vframes 4 -> each frame is 64x64, NOT 16x16
-##   ink   x 19..44, y 5..47 in frame px  -> 26 x 43
-##   scale 1.2                          -> 31.2 x 51.6 rendered px
-##   local ink x -15.60..14.40  y -32.40..+18.00
+## The ink alone is NOT the wrong reference, but the SIGN of the comparison is.
+## What the hat has to clear is the bottom of the wall cell, which is generated
+## from the GRID. Measured with the player pressed flush north:
 ##
-## So the hat top is at y -32.4 and the feet at y +18.0. The sprite origin is
-## NOT at the feet - it sits 18 px above them - so a box centred on the origin
-## with its top at the hat and its bottom at the feet must be ~51 tall and
-## offset upward, not 19 tall at y 0.
+##   collider 20x20 (what the file actually produced) -> ink 22.39 px INSIDE
+##            the wall cell. That was the bug.
+##   collider 16x51 at y -7.2                     -> ink sits 0.31 px BELOW the
+##            wall cell's base, i.e. it already clears it. Not a bug.
 ##
-## The 16-wide box is deliberate and unrelated to the ink: a collider narrower
-## than the sprite is what lets the player slip through a gap the art is wider
-## than. 16 rendered px is under 0.6 of a 32 px tile.
+## NOTE for anyone editing Main.tscn: `#` is NOT a comment character in a .tscn
+## file, `;` is. A `#` line inside a `[node]` or `[sub_resource]` block is
+## parsed as an invalid property, the block is discarded, and the node silently
+## keeps its DEFAULT values. That is how a 16x51 collider and a z_index of 3
+## both failed to apply while the file on disk looked correct - the running
+## collider was Godot's default 20x20 at the origin. Keep comments out of the
+## .tscn and put them here.
+##
+## Width is 16 - narrower than the 31.2 px of drawn art on purpose. A collider
+## narrower than its sprite is what lets the player through a gap the artwork is
+## wider than, and 16 rendered px is 0.5 of a 32 px tile, comfortably under the
+## 0.6 limit.
 const PLAYER_SIZE := Vector2(16, 51)
 ## Half the player's collider, in RENDERED px. Derived, so it cannot drift out
 ## of step with PLAYER_SIZE. Used by the spawn and prop clearance checks.

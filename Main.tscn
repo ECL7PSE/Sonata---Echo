@@ -8,19 +8,6 @@
 [ext_resource type="Script" path="res://inventory_ui.gd" id="6_invui"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_r0du0"]
-# MEASURED from the alpha bounding box of idle frame 4 (tools/measure_player.gd):
-# the sheet is 256x256 at hframes/vframes 4, so a frame is 64x64 and the ink
-# spans y 5..47 frame px -> y -32.40..+18.00 rendered at scale 1.2.
-#
-# Height 51 with position y -7.2 puts the top edge at -32.7 and the bottom at
-# +18.3, so the box brackets the hat and the feet with a little to spare. The
-# old 20x16 at y +2 spanned only -6..+10: its top was 26 px BELOW the hat, which
-# is why the hat walked into the wall cap.
-#
-# Width is 16 - narrower than the 31.2 px of drawn art on purpose. A collider
-# narrower than its sprite is what lets the player through a gap the artwork is
-# wider than, and 16 rendered px is 0.5 of a 32 px tile, comfortably under the
-# 0.6 limit. AttackArea and the hurtbox are untouched.
 size = Vector2(16, 51)
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_jsssl"]
@@ -31,11 +18,6 @@ radius = 17.20465
 [node name="Dungeon" parent="." unique_id=1459863182 instance=ExtResource("4_dungeon")]
 
 [node name="Player(CharacterBody2D)" type="CharacterBody2D" parent="." unique_id=2091494280]
-# Draw order only, no collision change. z_as_relative MUST be false here: the
-# player is a sibling of Dungeon, not a child of it, so its z_index is measured
-# from the canvas rather than from a parent. Left relative, z_index 3 would
-# still resolve against the default 0 and the player would stay under the wall
-# cap at z 1 - which is exactly the bug this fixes.
 z_index = 3
 z_as_relative = false
 script = ExtResource("1_uu6xs")
@@ -48,9 +30,6 @@ vframes = 4
 frame = 4
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player(CharacterBody2D)" unique_id=1725347124]
-# Centred at y -7.2 so the 51-tall box spans -32.7..+18.3, bracketing the
-# measured ink (-32.4..+18.0). See the size comment above and
-# dungeon_builder.gd PLAYER_SIZE, which this must stay equal to.
 position = Vector2(0, -7.2)
 shape = SubResource("RectangleShape2D_r0du0")
 
