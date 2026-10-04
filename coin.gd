@@ -159,6 +159,9 @@ func _collect(_body: Node2D) -> void:
 	var state := _game_state()
 	if state != null:
 		state.add_coins(1)
+	# One per pickup. The manager caps a burst of these at 3 so a coin shower
+	# stays a rattle rather than a wall of noise.
+	_sfx("coin_collect")
 	_pop()
 	queue_free()
 
@@ -320,3 +323,11 @@ func _pop() -> void:
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(sprite, "modulate:a", 0.0, 0.18)
 	tween.chain().tween_callback(queue_free)
+## Sound through the Audio autoload, if it is present.
+func _sfx(event: String, at: Variant = null) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play", event, at)

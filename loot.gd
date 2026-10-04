@@ -60,6 +60,10 @@ func _on_area_entered(area: Area2D) -> void:
 	if not area.get_parent() is CharacterBody2D:
 		return
 	_used = true
+	# chest_open here, and coin_drop ONCE for the whole chest - not once per
+	# coin, which would turn a single opening into a dozen overlapping clatters.
+	_sfx("chest_open")
+	_sfx("coin_drop")
 	_cooldown_left = cooldown
 	sprite.play(open_animation)
 	_spawn_coins()
@@ -99,3 +103,14 @@ func _floor() -> Callable:
 		return func(_c: Vector2i) -> bool: return true
 	var grid: Array = builder.get("_grid")
 	return func(c: Vector2i) -> bool: return builder._walkable(grid, c)
+## Sound through the Audio autoload, if it is present.
+##
+## The --script test harnesses boot scenes without autoloads, so call sites go
+## through this guard rather than assuming Audio exists.
+func _sfx(event: String, at: Variant = null) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play", event, at)

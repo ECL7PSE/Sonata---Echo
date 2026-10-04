@@ -226,6 +226,43 @@ func _physics_process(delta):
 	# nothing - no error, no failure, just a game where the sword was dead.
 	if Input.is_action_just_pressed("attack"):
 		do_attack()
+	_footsteps(delta)
+
+
+## Footsteps on a timer, but only while genuinely moving.
+##
+## Gated on the body's own speed rather than on "a key is down", so the steps
+## stop when the player is stopped by a wall, slowed by a trap, or mid-swing -
+## otherwise they keep ticking while the character visibly stands still.
+func _footsteps(delta: float) -> void:
+	var moving: bool = velocity.length() > FOOTSTEP_MIN_SPEED and not is_attacking
+	if not moving:
+		_footstep_left = 0.0
+		return
+	_footstep_left -= delta
+	if _footstep_left > 0.0:
+		return
+	_footstep_left = FOOTSTEP_INTERVAL
+	_sfx("footstep")
+
+
+## Below this the player is not really walking, so no step plays.
+const FOOTSTEP_MIN_SPEED := 20.0
+const FOOTSTEP_INTERVAL := 0.28
+var _footstep_left := 0.0
+
+
+## Sound through the Audio autoload, if it is present.
+##
+## The --script test harnesses boot scenes without autoloads, so call sites go
+## through this guard rather than assuming Audio exists.
+func _sfx(event: String, at: Variant = null) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play", event, at)
 
 ## Catches the player if they end a frame off the floor, whatever moved them.
 ##
@@ -389,6 +426,10 @@ func do_attack():
 	is_attacking = true
 	velocity = Vector2.ZERO
 	swing_id += 1
+	# The slash sounds at the START of the swing, not on contact: it is the
+	# player's own action, so hearing it the instant the key lands is what makes
+	# the swing feel responsive.
+	_sfx("player_slash")
 
 	var col := _get_dir_col(last_direction)
 

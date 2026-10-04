@@ -30,3 +30,17 @@ func _on_area_entered(area: Area2D) -> void:
 	if area.get_parent() is CharacterBody2D:
 		_used = true
 		sprite.play(react_animation)
+		# A pot and a crate are different objects with different clips; the
+		# distinction is the node name the builder gave it.
+		if str(name).begins_with("Crate"):
+			_sfx("crate_break")
+		else:
+			_sfx("vase_break")
+## Sound through the Audio autoload, if it is present.
+func _sfx(event: String, at: Variant = null) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play", event, at)
