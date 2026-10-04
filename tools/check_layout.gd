@@ -290,6 +290,7 @@ func _initialize() -> void:
 	_check_prop_placement(builder, grid)
 	_check_shaft_width(builder, grid)
 	_check_draw_order(builder)
+	_check_corridor_passable(builder)
 
 
 ## Every band cell within WALL_RING of a walkable cell must land INSIDE the grid.
@@ -550,6 +551,39 @@ func _check_draw_order(builder: Node2D) -> void:
 ## the contents never matter here and none of this reaches the screen.
 func _tileset_for_check() -> TileSet:
 	return TileSet.new()
+
+
+## The player must still fit through a MIN_CORRIDOR-wide gap.
+##
+## The collider is now 16x51 rather than 20x16. It got much TALLER, and a tall
+## box is what can wedge in a doorway, so this is checked explicitly rather than
+## assumed: the box has to fit inside MIN_CORRIDOR cells across BOTH axes, and
+## the width has to stay under the 0.6-tile rule so the art can overhang.
+func _check_corridor_passable(builder: Node2D) -> void:
+	var size: Vector2 = builder.PLAYER_SIZE
+	var cell_px: float = builder.GRID * builder.SCALE
+	var gap: float = builder.MIN_CORRIDOR * cell_px
+
+	_ok(size.x <= gap,
+			"player collider is %.0f px wide, a %d-cell gap is only %.0f px"
+			% [size.x, builder.MIN_CORRIDOR, gap])
+	_ok(size.y <= gap,
+			"player collider is %.0f px tall, a %d-cell gap is only %.0f px - "
+			% [size.y, builder.MIN_CORRIDOR, gap]
+			+ "it would wedge in a doorway")
+	# The stated design rule: the collider stays narrower than 0.6 of a tile so
+	# corridors stay easy even though the drawn sprite is wider than the box.
+	_ok(size.x < cell_px * 0.6,
+			"player collider is %.1f px wide, over the 0.6-tile limit of %.1f px"
+			% [size.x, cell_px * 0.6])
+
+	# And the real thing: every declared corridor must actually be wide enough.
+	for c in builder.CORRIDORS:
+		var rect: Rect2i = c
+		var across: int = mini(rect.size.x, rect.size.y)
+		_ok(across >= builder.MIN_CORRIDOR,
+				"corridor %s is only %d cell(s) across, need %d"
+				% [rect, across, builder.MIN_CORRIDOR])
 
 
 ## True when `cell` lies inside one of the rooms appended in this feature pass.

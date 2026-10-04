@@ -59,12 +59,30 @@ const MAP_H := 43
 # The player's collider in Main.tscn is 43x67 px, which is 1.4 x 2.1 cells at
 # SCALE 2, so a corridor has to be 3 cells (96 px) across to be walkable.
 const MIN_CORRIDOR := 3
-## Half the player's collider, in RENDERED px. Must track Main.tscn's
-## CollisionShape2D rectangle, which is now a 20x16 feet box - was 43x67, half
-## (21.5, 33.5). This is the number the clearance checks are derived from, so
-## leaving it at the old value would keep enforcing a collider the player no
-## longer has.
-const PLAYER_HALF := Vector2(10, 8)
+
+## The player's BODY collider, in RENDERED px. Must track the RectangleShape2D
+## in Main.tscn.
+##
+## MEASURED, not assumed. tools/measure_player.gd reads the alpha bounding box
+## of idle frame 4 in darkhatman_idle_sheet_64x64.png:
+##
+##   sheet 256x256, hframes/vframes 4 -> each frame is 64x64, NOT 16x16
+##   ink   x 19..44, y 5..47 in frame px  -> 26 x 43
+##   scale 1.2                          -> 31.2 x 51.6 rendered px
+##   local ink x -15.60..14.40  y -32.40..+18.00
+##
+## So the hat top is at y -32.4 and the feet at y +18.0. The sprite origin is
+## NOT at the feet - it sits 18 px above them - so a box centred on the origin
+## with its top at the hat and its bottom at the feet must be ~51 tall and
+## offset upward, not 19 tall at y 0.
+##
+## The 16-wide box is deliberate and unrelated to the ink: a collider narrower
+## than the sprite is what lets the player slip through a gap the art is wider
+## than. 16 rendered px is under 0.6 of a 32 px tile.
+const PLAYER_SIZE := Vector2(16, 51)
+## Half the player's collider, in RENDERED px. Derived, so it cannot drift out
+## of step with PLAYER_SIZE. Used by the spawn and prop clearance checks.
+const PLAYER_HALF := PLAYER_SIZE * 0.5
 const PROP_CLEARANCE := Vector2(26, 26)
 
 # --- Draw order ---------------------------------------------------------------
