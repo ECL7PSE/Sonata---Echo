@@ -97,7 +97,12 @@ func _bite() -> void:
 func _apply_damage(body: Node2D) -> void:
 	if body == null or not body.has_method("take_damage"):
 		return
-	body.take_damage(damage, global_position)
+	# Only when the spike actually connects. take_damage returns false while
+	# the player is in i-frames, so a trap ticking away at an invulnerable
+	# player makes no noise at all - which is also why this cannot fire while
+	# the spikes are merely rising, before any bite has happened.
+	if body.take_damage(damage, global_position):
+		_sfx("trap_spike")
 
 
 ## Drives the cycle. Kept out of the AnimatedSprite2D's own playback so the pause
@@ -184,3 +189,11 @@ func _apply(body: Node2D, active: bool) -> void:
 		body.add_speed_scale(source, slow_factor)
 	else:
 		body.remove_speed_scale(source)
+## Sound through the Audio autoload, if it is present.
+func _sfx(event: String, at: Variant = null) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play", event, at)

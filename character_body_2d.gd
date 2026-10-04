@@ -506,3 +506,14 @@ func do_attack():
 	anim_frame = 0
 	anim_timer = 0.0
 	icon.frame = 0 * 4 + col
+## Player-only override, so the enemies never inherit the player's hurt noise.
+##
+## Damageable.take_damage already returns false when the hit was BLOCKED - i-
+## frames, or zero damage - and that is the signal used here: the sound plays
+## when damage was genuinely applied and not otherwise. Putting this in the base
+## class instead would make every monster cry out in pain when the player is hit.
+func take_damage(amount: int, source_position: Vector2) -> bool:
+	var applied := super.take_damage(amount, source_position)
+	if applied:
+		_sfx("player_hurt")
+	return applied

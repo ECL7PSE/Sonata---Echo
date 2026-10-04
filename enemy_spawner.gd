@@ -342,6 +342,8 @@ static func make_mimic(cell_centre: Vector2, room_name: String,
 	var e: Node2D = ENEMY_SCENE.instantiate()
 	e.set_script(MIMIC_SCRIPT)
 	e.data = DB.MIMIC
+# The audio map is keyed on the species, so a Mimic needs to say so.
+	e.species = "mimic"
 	e.position = cell_centre
 	e.home_position = cell_centre
 	e.name = "Mimic_%s_%s" % [room_name, suffix]
@@ -363,6 +365,8 @@ static func make_enemy(key: String, cell_centre: Vector2, room_name: String,
 	# uses the UPPER const name ("RAT"). Normalise here rather than making every
 	# caller remember which is which.
 	e.data = DB.BY_KEY[key.to_lower()]
+# The audio map is keyed on the lowercase species name.
+	e.species = key.to_lower()
 	e.position = cell_centre
 	e.home_position = cell_centre
 	e.boss = is_boss

@@ -171,6 +171,10 @@ func _burst() -> void:
 	if _has_burst or chain != Chain.DORMANT:
 		return
 	_has_burst = true
+# The burst is the one-off with no matching "action" in the map: it is the
+	# chest splitting open, not a hit. The guard above already makes it
+	# once-only, so a re-burst cannot double up.
+	_sfx_enemy("burst")
 	_chain_time = 0.0
 	chain = Chain.OPENING
 	# The swap, the flash and the shake all happen on THIS frame. Deferring the

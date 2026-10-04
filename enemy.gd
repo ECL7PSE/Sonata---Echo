@@ -290,6 +290,15 @@ func _play(anim: String) -> void:
 ## sprite otherwise.
 func _set_hitbox_active(on: bool) -> void:
 	hit_shape.disabled = not on
+# The attack sound fires on the FIRST damaging frame, not when the monster
+	# winds up: that is the moment its hitbox actually comes forward, and a
+	# growl on wind-up reads as a warning instead of a hit. The flag is cleared
+	# the moment the hitbox retracts, so one swing is one sound.
+	if on and not _attack_sounded:
+		_attack_sounded = true
+		_sfx_enemy("attack")
+	elif not on:
+		_attack_sounded = false
 	var reach := 0.0
 	if on:
 		reach = _facing_x() * 0.45 * _body_w
@@ -344,6 +353,11 @@ func _on_hurtbox_area_entered(area: Area2D) -> void:
 	if amount == 0:
 		amount = 2
 	take_damage(amount, area.global_position)
+# Only when the hit actually landed. A rejected repeat swing, and a strike
+	# on a dormant Mimic (which reports itself invulnerable), both make this
+	# return false and so stay silent.
+	if take_damage(amount, area.global_position):
+		_sfx_enemy("hurt")
 
 
 ## Re-arms the per-swing guard. The id, not the signal, decides - this only
@@ -586,6 +600,9 @@ func _die() -> void:
 		return
 	_dying = true
 	state = State.DEAD
+# Once. _die() returns early if the state is already DEAD, so this cannot
+	# be reached from the safety-net timer or from animation_finished.
+	_sfx_enemy("death")
 	_state_time = 0.0
 	velocity = Vector2.ZERO
 	_set_hitbox_active(false)
@@ -699,3 +716,22 @@ func _face(to_target: Vector2) -> void:
 	if to_target == Vector2.ZERO:
 		return
 	sprite.flip_h = to_target.x < 0.0
+## Which monster this is, lowercased ("rat", "slime", "mimic"). Set once by the
+## spawner. The audio map is keyed on it, and an empty value simply plays
+## nothing - so an enemy built without a species is silent, not broken.
+var species := ""
+## Guard so one attack plays one sound however long the hitbox stays out.
+var _attack_sounded := false
+
+
+## This monster's attack / hurt / death clip, positional and range-limited.
+##
+## The boss flag lets a skeleton be heard as a boss without a second set of
+## files: the same clips, pitched down.
+func _sfx_enemy(action: String) -> void:
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return
+	var audio := tree.root.get_node_or_null("Audio")
+	if audio != null:
+		audio.call("play_enemy", species, action, global_position, boss)
