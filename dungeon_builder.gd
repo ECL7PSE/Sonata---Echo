@@ -1,4 +1,4 @@
-﻿@tool
+@tool
 extends Node2D
 ## Echo - dungeon builder.
 ##
@@ -66,6 +66,39 @@ const MIN_CORRIDOR := 3
 ## longer has.
 const PLAYER_HALF := Vector2(10, 8)
 const PROP_CLEARANCE := Vector2(26, 26)
+
+# --- Draw order ---------------------------------------------------------------
+##
+## One place for every z_index in the dungeon, because the numbers were spread
+## across three files and drifted into a visible bug: the player's head was cut
+## off by the wall cap when walking along a north wall.
+##
+## The cause was that the Outline layer sat at z 2, the SAME layer as Props,
+## while the player and the enemies sat at the default z 0 - below the wall cap
+## at z 1. Walking north, the cap drew over the player's head; the cyan outline
+## at z 2 would have drawn over their whole body had the cap not been in the way.
+##
+## The order that fixes it, lowest first:
+##
+##   0  Floor, Hazards        flat things the player stands ON
+##   1  Walls + wall cap      masonry
+##   2  Outline               the 1px cyan silhouette
+##   3  Actors                the player and every enemy
+##   4  Props                 chests, pots, crates, torches, mimics
+##
+## Actors at 3 means the head always overlaps the cap and the cap never cuts it,
+## and it also keeps the Outline UNDER them - requirement 3, since a 1px cyan
+## line drawn across a face at z 2 looked like a scratch on the sprite.
+##
+## Props stay at 4, which is the value they had relative to everything else:
+## chests and torches keep drawing over the player, and props and enemies keep
+## the ordering they had (props above enemies).
+const Z_FLOOR := 0
+const Z_HAZARDS := 0
+const Z_WALLS := 1
+const Z_OUTLINE := 2
+const Z_ACTORS := 3
+const Z_PROPS := 4
 
 # --- Generated art ----------------------------------------------------------
 # Every tile is composed in code from this palette. Nothing is cut from a sheet,
@@ -396,8 +429,8 @@ const CRATES: Array[Vector2i] = [Vector2i(35, 7), Vector2i(36, 7), Vector2i(35, 
 #   (17,25) (20,25)         hall-vault link   -> vault
 #   (33,35)                  eye_well          -> eye_well
 #   (22,35) (26,35) (23,38)  goblin_den        -> goblin_den
-        # (23,33) then moved again to (25,35): y=33 is the room's first floor row,
-        # so it sat 1 cell under the top wall band and failed the 24px wall rule.
+		# (23,33) then moved again to (25,35): y=33 is the room's first floor row,
+		# so it sat 1 cell under the top wall band and failed the 24px wall rule.
 #   (11,34)                  mimic_den         -> mimic_den
 const TRAPS: Array[Vector2i] = [
 	Vector2i(5, 24), Vector2i(6, 24), Vector2i(7, 24),    # hall
@@ -455,13 +488,13 @@ func _ready() -> void:
 	# player stands on the spikes, which is what a spike floor should look like.
 	var hazards := Node2D.new()
 	hazards.name = "Hazards"
-	hazards.z_index = 0
+	hazards.z_index = Z_HAZARDS
 	add_child(hazards)
 	layers["hazards"] = hazards
 
 	var props := Node2D.new()
 	props.name = "Props"
-	props.z_index = 2
+	props.z_index = Z_PROPS
 	add_child(props)
 	layers["props"] = props
 
@@ -660,17 +693,17 @@ func _make_layers(tileset: TileSet) -> Dictionary:
 	var floor_layer := TileMapLayer.new()
 	floor_layer.name = "Floor"
 	floor_layer.tile_set = tileset
-	floor_layer.z_index = 0
+	floor_layer.z_index = Z_FLOOR
 
 	var wall_layer := TileMapLayer.new()
 	wall_layer.name = "Walls"
 	wall_layer.tile_set = tileset
-	wall_layer.z_index = 1
+	wall_layer.z_index = Z_WALLS
 
 	var edge_layer := TileMapLayer.new()
 	edge_layer.name = "Outline"
 	edge_layer.tile_set = tileset
-	edge_layer.z_index = 2
+	edge_layer.z_index = Z_OUTLINE
 
 	return {
 		"floor": floor_layer,
@@ -1107,6 +1140,11 @@ func _place_enemy_spawns() -> void:
 	add_child(spawns)
 	var triggers := Node2D.new()
 	triggers.name = "RoomTriggers"
+	# Enemies draw at the actor layer, so a tall sprite (skeleton, mushroom,
+	# goblin) is never cut off by the wall cap and the cyan Outline stays
+	# under it. Previously this node inherited the default z 0, which is BELOW
+	# the wall cap at z 1 - the same bug as the player.
+	triggers.z_index = Z_ACTORS
 	add_child(triggers)
 	_place_mimics(spawns)
 

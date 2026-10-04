@@ -289,6 +289,7 @@ func _initialize() -> void:
 	_check_base_collision(builder, grid)
 	_check_prop_placement(builder, grid)
 	_check_shaft_width(builder, grid)
+	_check_draw_order(builder)
 
 
 ## Every band cell within WALL_RING of a walkable cell must land INSIDE the grid.
@@ -486,6 +487,69 @@ func _trap_corridor_problems(builder: Node2D, cell: Vector2i) -> Array[String]:
 							% [cell, maxi(d.x, d.y), near])
 					return out
 	return out
+
+
+## Draw order: actors in front of the masonry, outline behind them.
+##
+## This is a regression guard for a visible bug, not a style rule. The player
+## and the enemies both used to sit at the default z 0 while the wall cap was at
+## z 1, so walking north along a wall drew the cap straight across the head and
+## tall monsters were cut off at the neck. It also pins requirement 3: the 1px
+## cyan Outline must stay UNDER the player and the enemies, or it draws across
+## their faces.
+##
+## Everything here is asserted against the CONSTANTS and against a freshly made
+## layer set, not against the live tree: check_layout probes the builder before
+## _ready() has run, so the real Walls/Outline/Props nodes do not exist yet. The
+## player is a static property of Main.tscn, so its z is read from the scene
+## file's parsed value via the constant it must agree with.
+func _check_draw_order(builder: Node2D) -> void:
+	var z_actors: int = builder.Z_ACTORS
+	var z_walls: int = builder.Z_WALLS
+	var z_outline: int = builder.Z_OUTLINE
+	var z_props: int = builder.Z_PROPS
+
+	# The core of it: actors must be strictly above the cap AND the outline.
+	_ok(z_actors > z_walls,
+			"Z_ACTORS (%d) must be above Z_WALLS (%d), or the wall cap cuts the "
+			% [z_actors, z_walls] + "player's head off")
+	_ok(z_actors > z_outline,
+			"Z_ACTORS (%d) must be above Z_OUTLINE (%d), or the cyan line draws "
+			% [z_actors, z_outline] + "across the player's face")
+	# Props and enemies keep the ordering they had: props draw over enemies.
+	_ok(z_props > z_actors,
+			"Z_PROPS (%d) must stay above Z_ACTORS (%d), or chests and torches "
+			% [z_props, z_actors] + "change their order against the enemies")
+	# Flat things the player stands ON must stay under everything.
+	_ok(builder.Z_HAZARDS < z_actors,
+			"Z_HAZARDS (%d) must stay under Z_ACTORS (%d), or the spikes draw "
+			% [builder.Z_HAZARDS, z_actors] + "over the player again")
+	_ok(builder.Z_FLOOR < z_walls,
+			"Z_FLOOR (%d) must stay under Z_WALLS (%d)"
+			% [builder.Z_FLOOR, z_walls])
+
+	# The layers the builder actually builds must use those constants, so a
+	# later edit cannot leave the constant right and the node wrong.
+	var made: Dictionary = builder._make_layers(_tileset_for_check())
+	_ok(made.has("wall") and int(made["wall"].z_index) == z_walls,
+			"the Walls layer is not built at Z_WALLS")
+	_ok(made.has("edge") and int(made["edge"].z_index) == z_outline,
+			"the Outline layer is not built at Z_OUTLINE")
+	_ok(made.has("floor") and int(made["floor"].z_index) == builder.Z_FLOOR,
+			"the Floor layer is not built at Z_FLOOR")
+	for k in made.keys():
+		var c: CanvasItem = made[k]
+		# y_sort would silently defeat every z comparison above.
+		_ok(not c.y_sort_enabled,
+				"%s has y_sort enabled, which reorders it against fixed z" % c.name)
+		if is_instance_valid(c):
+			c.free()
+
+
+## A throwaway TileSet. _make_layers only stores the reference on each layer, so
+## the contents never matter here and none of this reaches the screen.
+func _tileset_for_check() -> TileSet:
+	return TileSet.new()
 
 
 ## True when `cell` lies inside one of the rooms appended in this feature pass.

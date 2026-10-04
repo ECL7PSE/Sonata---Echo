@@ -25,6 +25,13 @@ radius = 17.20465
 [node name="Dungeon" parent="." unique_id=1459863182 instance=ExtResource("4_dungeon")]
 
 [node name="Player(CharacterBody2D)" type="CharacterBody2D" parent="." unique_id=2091494280]
+# Draw order only, no collision change. z_as_relative MUST be false here: the
+# player is a sibling of Dungeon, not a child of it, so its z_index is measured
+# from the canvas rather than from a parent. Left relative, z_index 3 would
+# still resolve against the default 0 and the player would stay under the wall
+# cap at z 1 - which is exactly the bug this fixes.
+z_index = 3
+z_as_relative = false
 script = ExtResource("1_uu6xs")
 
 [node name="Icon(Sprite2D)" type="Sprite2D" parent="Player(CharacterBody2D)" unique_id=721354121]
