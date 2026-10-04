@@ -1,4 +1,4 @@
-@tool
+﻿@tool
 extends Node2D
 ## Echo - dungeon builder.
 ##
@@ -368,27 +368,40 @@ const CRATES: Array[Vector2i] = [Vector2i(35, 7), Vector2i(36, 7), Vector2i(35, 
 #
 # Nothing here sits in the removed forge->vault stair: that whole hallway went
 # with the corridor, so its strip went too.
+# EVERY trap lives in room floor, at least 3 cells (Chebyshev) from ANY
+# corridor cell, and never inside a corridor at all.
+#
+# This overrides two earlier rules on purpose.
+#
+# 1. The "a full-width strip across the corridor is the point of it" rule.
+#    The west stair and the forge link are 3 cells wide, so a strip down
+#    the middle row left exactly one free lane on each side - and the
+#    lane beside the cap was 1 tile of true standing room. That is a
+#    squeeze, not a hazard you can read and step around. Traps are now
+#    room floor, where there is floor to step around them on.
+# 2. "Do not move the original props." The corridor strips were the
+#    original traps, so this move is the deliberate exception.
+#
+# MIN_CORRIDOR, ROOMS and CORRIDORS are untouched.
+#
+# Old -> new, so the move is auditable:
+#   (8,17) (9,17) (10,17)   west stair strip  -> hall
+#   (15,9)  (16,9)          cistern link      -> cistern
+#   (30,8)  (30,9) (30,10)  forge link        -> crypt
+#   (17,25) (20,25)         hall-vault link   -> vault
+#   (33,35)                  eye_well          -> eye_well
+#   (22,35) (26,35) (23,38)  goblin_den        -> goblin_den
+        # (23,33) then moved again to (25,35): y=33 is the room's first floor row,
+        # so it sat 1 cell under the top wall band and failed the 24px wall rule.
+#   (11,34)                  mimic_den         -> mimic_den
 const TRAPS: Array[Vector2i] = [
-	# full width across the west stair
-	Vector2i(8, 17), Vector2i(9, 17), Vector2i(10, 17),
-	# staggered pair in the cistern link
-	Vector2i(15, 9), Vector2i(16, 9),
-	# full width across the forge link
-	Vector2i(30, 8), Vector2i(30, 9), Vector2i(30, 10),
-	# staggered pair in the hall-vault link
-	Vector2i(17, 25), Vector2i(20, 25),
-	# Appended rooms. These are room-floor hazards rather than corridor strips:
-	# unlike the originals above they keep a cell of clearance from the walls, so
-	# they can be stepped around and never sit flush against a wall cap.
-	Vector2i(33, 35), Vector2i(36, 38),      # eye_well
-	Vector2i(22, 35), Vector2i(26, 35), Vector2i(23, 38),   # goblin_den
-	# mimic_den. (12,38) moved to (11,34): the awake mimic is 2.1 tiles wide, so
-	# its only legal spot in an 8x7 room is the bottom row against the wall below,
-	# and a trap at (12,38) reserves x=11..13 of exactly that row - it cut the
-	# room to two of its three mimics. (11,34) is the same room, the same
-	# distance from its chest, leaves the bottom row clear, and keeps the one-cell
-	# clearance the trap rule requires (x=10 was flush against the west band).
-	Vector2i(15, 35), Vector2i(11, 34),      # mimic_den
+	Vector2i(5, 24), Vector2i(6, 24), Vector2i(7, 24),    # hall
+	Vector2i(7, 9), Vector2i(8, 9),                      # cistern
+	Vector2i(21, 7), Vector2i(22, 7), Vector2i(21, 8),    # crypt
+	Vector2i(24, 24), Vector2i(25, 24),                  # vault
+	Vector2i(34, 35), Vector2i(36, 38),                   # eye_well
+	Vector2i(25, 35), Vector2i(24, 35), Vector2i(25, 34),  # goblin_den
+	Vector2i(14, 34), Vector2i(15, 35),                   # mimic_den
 ]
 
 const TP_FRAMES := 14

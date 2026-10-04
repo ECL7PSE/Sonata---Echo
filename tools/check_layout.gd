@@ -419,11 +419,11 @@ func _check_room_parity(builder: Node2D, grid: Array) -> void:
 ## apply only to props in the APPENDED rooms. The original props deliberately
 ## break them and must not be moved:
 ##
-##   * the corridor trap strips ((8,17),(9,17),(10,17), (30,8..10)) span a 3-wide
-##     corridor, so the outer ones are necessarily flush against a corridor wall.
-##     That is the point of them: they force a slow crossing.
 ##   * the hall chest (8,26) sits 2 cells from the spawn because it is the start
 ##     room's reward chest, and the start room is meant to be walkable and safe.
+##
+## No trap is exempt any more: every trap is room floor and at least 3 cells
+## from any corridor cell, so the STRICT rules now cover all of them.
 ##
 ## Appending rooms get the stricter treatment so a new chest can never be placed
 ## somewhere the player cannot stand beside, and a new trap can never land on
@@ -439,6 +439,10 @@ func _check_prop_placement(builder: Node2D, grid: Array) -> void:
 	for kind_name in [["chest", builder.CHESTS], ["trap", builder.TRAPS]]:
 		var kind: String = kind_name[0]
 		for cell in kind_name[1]:
+			# Corridor clearance is absolute and applies to EVERY trap, on top of
+			# whichever placement rule the room it sits in would otherwise use.
+			if kind == "trap":
+				bad.append_array(_trap_corridor_problems(builder, cell))
 			var is_new: bool = _in_appended_room(builder, cell)
 			if is_new:
 				strict += 1
@@ -452,6 +456,36 @@ func _check_prop_placement(builder: Node2D, grid: Array) -> void:
 		else "%d PROBLEM(S)" % bad.size()])
 	for b in bad:
 		_fails.append(b)
+
+
+## The absolute trap rule, checked for every trap regardless of its room.
+##
+## A trap may not occupy a corridor cell, and may not sit within 2 cells of one
+## (Chebyshev). A 3-wide corridor is exactly the player's half-width plus its
+## own width, so a trap a cell off the centre line leaves a single 1-tile lane
+## on the far side - often underneath the wall cap - and the crossing becomes a
+## squeeze rather than a readable hazard.
+func _trap_corridor_problems(builder: Node2D, cell: Vector2i) -> Array[String]:
+	var out: Array[String] = []
+	if builder._in_corridor(cell):
+		out.append("trap at %s sits IN a corridor" % cell)
+		return out
+	for c in builder.CORRIDORS:
+		# Both the loop var and the derived rect are typed explicitly: CORRIDORS
+		# is an untyped Array, so `c` is a Variant and GDScript will not infer
+		# anything from `c.position + c.size` (that is a parse error, not a
+		# warning). Naming it `end` additionally shadows Rect2i.end.
+		var rect: Rect2i = c
+		var far: Vector2i = rect.position + rect.size
+		for y in range(rect.position.y, far.y):
+			for x in range(rect.position.x, far.x):
+				var near := Vector2i(x, y)
+				var d := Vector2i(absi(near.x - cell.x), absi(near.y - cell.y))
+				if d.x <= 2 and d.y <= 2:
+					out.append("trap at %s is %d cells from the corridor at %s"
+							% [cell, maxi(d.x, d.y), near])
+					return out
+	return out
 
 
 ## True when `cell` lies inside one of the rooms appended in this feature pass.
