@@ -48,10 +48,9 @@ const CELL := 16.0
 ## visible, it is there, and it can never be collected. This is that strip.
 ##
 ## Player half-width + coin pickup radius, halved into local space. The player
-## collider is 16 wide (Main.tscn, measured in tools/measure_player.gd), so 8
-## rendered px, plus the coin's 9 local px (18 rendered) radius = 26 rendered =
-## 13 local. It was 14 at 20 wide, and 20 at the old 43x67.
-const CLEARANCE := 13.0
+## collider is 14 wide (Main.tscn), so 7 rendered px, plus the coin's 9 local px
+## (18 rendered) radius = 25 rendered = 12.5 local. It was 13 at 16 wide.
+const CLEARANCE := 12.5
 
 ## Magnet range in LOCAL px (48 rendered px at the Dungeon's 2x scale).
 const MAGNET_RANGE := 24.0

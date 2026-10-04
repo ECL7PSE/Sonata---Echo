@@ -291,6 +291,7 @@ func _initialize() -> void:
 	_check_shaft_width(builder, grid)
 	_check_draw_order(builder)
 	_check_corridor_passable(builder)
+	_check_no_collision_holes(builder, grid)
 
 
 ## Every band cell within WALL_RING of a walkable cell must land INSIDE the grid.
@@ -517,10 +518,17 @@ func _check_draw_order(builder: Node2D) -> void:
 	_ok(z_actors > z_outline,
 			"Z_ACTORS (%d) must be above Z_OUTLINE (%d), or the cyan line draws "
 			% [z_actors, z_outline] + "across the player's face")
-	# Props and enemies keep the ordering they had: props draw over enemies.
-	_ok(z_props > z_actors,
-			"Z_PROPS (%d) must stay above Z_ACTORS (%d), or chests and torches "
-			% [z_props, z_actors] + "change their order against the enemies")
+	# Actors now draw ABOVE props, so a chest is never drawn over the player.
+	# This inverts the old rule, which asserted props above actors.
+	_ok(z_actors > z_props,
+			"Z_ACTORS (%d) must be above Z_PROPS (%d), or a chest draws over the "
+			% [z_actors, z_props] + "player standing in front of it")
+	# ...but props still have to clear everything they used to clear.
+	_ok(z_props > z_walls,
+			"Z_PROPS (%d) must stay above Z_WALLS (%d), or torches draw behind "
+			% [z_props, z_walls] + "the wall cap they are mounted on")
+	_ok(z_props > z_outline,
+			"Z_PROPS (%d) must stay above Z_OUTLINE (%d)" % [z_props, z_outline])
 	# Flat things the player stands ON must stay under everything.
 	_ok(builder.Z_HAZARDS < z_actors,
 			"Z_HAZARDS (%d) must stay under Z_ACTORS (%d), or the spikes draw "
@@ -577,6 +585,15 @@ func _check_corridor_passable(builder: Node2D) -> void:
 			"player collider is %.1f px wide, over the 0.6-tile limit of %.1f px"
 			% [size.x, cell_px * 0.6])
 
+	# The lane height is what the player can actually walk through: the corridor
+	# minus the feet box. The brief asks for at least 1.75 tiles (56 px).
+	var lane: float = gap - size.y
+	_ok(lane >= MIN_LANE_PX,
+			"lane in a %d-cell corridor is %.1f px, need %.0f (%.2f tiles)"
+			% [builder.MIN_CORRIDOR, lane, MIN_LANE_PX, lane / cell_px])
+	print("corridor lane : %.1f px in a %d-cell gap (box %.1f tall), need %.0f"
+			% [lane, builder.MIN_CORRIDOR, size.y, MIN_LANE_PX])
+
 	# And the real thing: every declared corridor must actually be wide enough.
 	for c in builder.CORRIDORS:
 		var rect: Rect2i = c
@@ -584,6 +601,56 @@ func _check_corridor_passable(builder: Node2D) -> void:
 		_ok(across >= builder.MIN_CORRIDOR,
 				"corridor %s is only %d cell(s) across, need %d"
 				% [rect, across, builder.MIN_CORRIDOR])
+
+
+## Minimum clear lane the player must have in a MIN_CORRIDOR corridor: 1.75
+## tiles, so the feet own most of the corridor's height.
+const MIN_LANE_PX := 56.0
+
+
+## No non-walkable cell that touches floor may lack collision.
+##
+## This is the assertion the "player walks out of the map" bug needed and never
+## had. _is_band scans dy from 0 and so never looks north of a cell, which left
+## 385 cells with neither art nor collision - 58 of them touching floor, in
+## unbroken runs along y=13, y=29 and y=40. Checking every 8-neighbour of every
+## walkable cell catches exactly the holes a player can reach.
+##
+## The layers are BUILT here rather than read from the live tree: check_layout
+## probes the builder before _ready(), so the real Walls layer does not exist
+## yet. _paint_walls + _seal_walls is the same pair the game runs, so this is a
+## check of what ships, not of a reimplementation.
+func _check_no_collision_holes(builder: Node2D, grid: Array) -> void:
+	var layers: Dictionary = builder._make_layers(_tileset_for_check())
+	builder._paint_walls(layers["wall"], layers["edge"], grid)
+	builder._seal_walls(layers["wall"], grid)
+	var wall_layer: TileMapLayer = layers["wall"]
+	var holes: Array[String] = []
+	for y in builder.MAP_H:
+		for x in builder.MAP_W:
+			var cell := Vector2i(x, y)
+			if builder._walkable(grid, cell):
+				continue
+			var touches := false
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					if builder._walkable(grid, cell + Vector2i(dx, dy)):
+						touches = true
+						break
+				if touches:
+					break
+			if not touches:
+				continue
+			if wall_layer.get_cell_source_id(cell) == -1:
+				holes.append(str(cell))
+	_ok(holes.is_empty(),
+			"%d non-walkable cell(s) beside floor have no collision: %s"
+			% [holes.size(), ", ".join(holes.slice(0, 8))])
+	print("collision seal: %d hole(s) beside floor" % holes.size())
+	for k in layers.keys():
+		var c: CanvasItem = layers[k]
+		if is_instance_valid(c):
+			c.free()
 
 
 ## True when `cell` lies inside one of the rooms appended in this feature pass.

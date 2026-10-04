@@ -7,6 +7,15 @@ extends "res://damageable.gd"
 ## existing movement penalties from traps, and dying.
 
 @export var speed := 200.0
+const BUILDER := preload("res://dungeon_builder.gd")
+
+## The dungeon's carved-floor grid, read once so the per-frame bounds check does
+## not walk the tree. Empty until _ready; every helper tolerates that.
+var _grid: Array = []
+
+## Half a cell in rendered px: the furthest this body may travel in one frame.
+## A cell is GRID * SCALE = 32 rendered px, so this is 16.
+const MAX_STEP_PX := 16.0
 @export var attack_frame_time := 0.05
 @export var idle_frame_time := 0.15
 @export var walk_frame_time := 0.1
@@ -164,6 +173,10 @@ func _ready():
 	# so the very first physics frame already happens at the right place.
 	snap_to_player_start()
 
+	var dungeon := get_node_or_null("../../Dungeon")
+	if dungeon != null:
+		_grid = dungeon.get("_grid")
+
 	attack_area.position = Vector2.ZERO
 	attack_shape.position = Vector2(0, ATTACK_HITBOX_DISTANCE)
 	attack_shape.disabled = true
@@ -189,19 +202,90 @@ func _physics_process(delta):
 	# single hit. It must come before the is_attacking early-return below.
 	super._physics_process(delta)
 
+	_clamp_step(delta)
+
 	if is_attacking:
 		move_and_slide()
+		_enforce_bounds()
 		return
 
 	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = direction * current_speed()
 	move_and_slide()
+	_enforce_bounds()
 
 	if direction != Vector2.ZERO:
 		last_direction = direction
 		_animate_walk(delta)
 	else:
 		_animate_idle(delta)
+
+## Catches the player if they end a frame off the floor, whatever moved them.
+##
+## The wall seal and the border ring are the real fix; this is the belt to that
+## braces, and it is deliberately checked EVERY physics frame rather than only
+## after damage. A tunnel, a teleport, a future bug in a push - none of them can
+## leave the player standing in the void if this runs.
+##
+## The snap is to the nearest walkable cell CENTRE, found by expanding rings, so
+## the player is put somewhere legal rather than merely nudged.
+func _enforce_bounds() -> void:
+	if global_position.is_finite() == false:
+		return
+	var cell := _cell_of(global_position)
+	if _is_floor(cell):
+		return
+	global_position = _nearest_floor_centre(global_position)
+	velocity = Vector2.ZERO
+
+
+## Never let one frame move the body more than half a cell.
+##
+## move_and_slide is a solver, not a swept test: at high speed, or through a
+## gap thinner than the per-frame step, a body can end up inside geometry it
+## passed through. Capping the step at half a cell keeps the body from skipping
+## a wall cell entirely, which is what turned a fast dash into a way out of the
+## map. Applied to velocity, never to position - position is owned by
+## move_and_slide and is never written here.
+func _clamp_step(delta: float) -> void:
+	var limit := MAX_STEP_PX / maxf(delta, 0.0001)
+	if velocity.length() > limit:
+		velocity = velocity.normalized() * limit
+
+
+## The dungeon cell containing a world position.
+func _cell_of(p: Vector2) -> Vector2i:
+	var cell_px := BUILDER.GRID * BUILDER.SCALE
+	return Vector2i(int(floor(p.x / cell_px)), int(floor(p.y / cell_px)))
+
+
+func _is_floor(cell: Vector2i) -> bool:
+	if _grid.is_empty():
+		return true
+	if cell.x < 0 or cell.y < 0 \
+			or cell.x >= BUILDER.MAP_W or cell.y >= BUILDER.MAP_H:
+		return false
+	return bool(_grid[cell.y][cell.x] == 1)
+
+
+## Nearest walkable cell centre to a world position, searched by ring.
+func _nearest_floor_centre(p: Vector2) -> Vector2:
+	var cell_px := BUILDER.GRID * BUILDER.SCALE
+	var start := _cell_of(p)
+	for r in range(0, 12):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if r > 0 and absi(dx) != r and absi(dy) != r:
+					continue
+				var c := Vector2i(start.x + dx, start.y + dy)
+				if not _is_floor(c):
+					continue
+				return Vector2(c) * cell_px + Vector2(cell_px, cell_px) * 0.5
+	# Nothing within 12 cells: the PlayerStart is always floor, so fall back.
+	var marker := get_node_or_null("../../Dungeon/PlayerStart") as Marker2D
+	if marker != null:
+		return marker.global_position
+	return p
 
 	if Input.is_action_just_pressed("attack"):
 		do_attack()

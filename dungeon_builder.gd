@@ -1,4 +1,4 @@
-@tool
+﻿@tool
 extends Node2D
 ## Echo - dungeon builder.
 ##
@@ -86,11 +86,19 @@ const MIN_CORRIDOR := 3
 ## collider was Godot's default 20x20 at the origin. Keep comments out of the
 ## .tscn and put them here.
 ##
-## Width is 16 - narrower than the 31.2 px of drawn art on purpose. A collider
-## narrower than its sprite is what lets the player through a gap the artwork is
-## wider than, and 16 rendered px is 0.5 of a 32 px tile, comfortably under the
-## 0.6 limit.
-const PLAYER_SIZE := Vector2(16, 51)
+## Width is 14 - narrower than the drawn art on purpose, so the player slips
+## through gaps the artwork overhangs. 14 rendered px is 0.4375 of a 32 px tile.
+##
+## The sprite was shrunk from scale 1.2 to PLAYER_SCALE so its ink is ~38.7 px
+## tall instead of ~51: at 1.2 the character was a tile and a half tall, which
+## is why a 3-tile corridor felt cramped. The box is the ink height minus
+## HEAD_OVERLAP_PX, so the top of the hat may sit HEAD_OVERLAP_PX inside a wall
+## instead of pinning the whole box against it.
+const PLAYER_SCALE := 0.9
+const HEAD_OVERLAP_PX := 4.0
+## Feet ink bottom in local px at PLAYER_SCALE: (48 - 32) * 0.9 = +14.4.
+const PLAYER_FEET_Y := 14.4
+const PLAYER_SIZE := Vector2(14, 38.7 - HEAD_OVERLAP_PX)
 ## Half the player's collider, in RENDERED px. Derived, so it cannot drift out
 ## of step with PLAYER_SIZE. Used by the spawn and prop clearance checks.
 const PLAYER_HALF := PLAYER_SIZE * 0.5
@@ -112,22 +120,23 @@ const PROP_CLEARANCE := Vector2(26, 26)
 ##   0  Floor, Hazards        flat things the player stands ON
 ##   1  Walls + wall cap      masonry
 ##   2  Outline               the 1px cyan silhouette
-##   3  Actors                the player and every enemy
-##   4  Props                 chests, pots, crates, torches, mimics
+##   3  Props                 chests, pots, crates, torches, mimics
+##   4  Actors                the player and every enemy
 ##
-## Actors at 3 means the head always overlaps the cap and the cap never cuts it,
-## and it also keeps the Outline UNDER them - requirement 3, since a 1px cyan
-## line drawn across a face at z 2 looked like a scratch on the sprite.
-##
-## Props stay at 4, which is the value they had relative to everything else:
-## chests and torches keep drawing over the player, and props and enemies keep
-## the ordering they had (props above enemies).
+## Actors sit ABOVE props so a chest is never drawn over the character standing
+## in front of it. Props still clear Floor, Hazards, Walls and the Outline, and
+## the wall-mounted torches are props, so they still burn in front of the cap.
+## Requirement 3 also holds: the Outline stays at 2, under props and actors, so
+## the cyan line never draws across a face.
 const Z_FLOOR := 0
 const Z_HAZARDS := 0
 const Z_WALLS := 1
 const Z_OUTLINE := 2
-const Z_ACTORS := 3
-const Z_PROPS := 4
+const Z_PROPS := 3
+const Z_ACTORS := 4
+
+## Cells of solid static collider ringing the whole map, outside the grid.
+const BORDER_THICK := 2
 
 # --- Generated art ----------------------------------------------------------
 # Every tile is composed in code from this palette. Nothing is cut from a sheet,
@@ -529,6 +538,8 @@ func _ready() -> void:
 
 	_paint_floor(layers["floor"])
 	_paint_walls(layers["wall"], layers["edge"], _grid)
+	_seal_walls(layers["wall"], _grid)
+	_place_border(self)
 	_place_traps(layers["hazards"], _grid)
 	_place_torches(layers["props"], _grid)
 	_place_shaft_lights(layers["props"], _grid)
@@ -1030,6 +1041,70 @@ func _paint_walls(wall_layer: TileMapLayer, edge_layer: TileMapLayer,
 			elif _is_void(grid, cell):
 				# The rim just outside the band: invisible, but it still blocks.
 				wall_layer.set_cell(cell, SRC_WALL, Vector2i(WALL_BLOCK, 0))
+
+
+## Every non-walkable cell gets a collision, unconditionally.
+##
+## _paint_walls above tiles a cell only when _is_band or _is_void says so, and
+## both are one-sided: _is_band scans dy from 0, so it NEVER looks north of a
+## cell, and _is_void probes only the four cardinal neighbours. A cell directly
+## north of floor therefore failed both, fell through every branch, and was
+## drawn as nothing at all - no art AND no collision.
+##
+## tools/audit_wall_holes.gd found 385 such cells, 58 touching floor, in
+## unbroken runs along y=13, y=29 and y=40. The player could walk out through
+## the north side of a room and into the void.
+##
+## This runs after _paint_walls and only fills cells with no tile yet, so it
+## cannot replace a cap or a drawn block - it can only close holes. Collision no
+## longer depends on any of the geometric predicates agreeing.
+func _seal_walls(wall_layer: TileMapLayer, grid: Array) -> void:
+	var sealed := 0
+	for y in MAP_H:
+		for x in MAP_W:
+			var cell := Vector2i(x, y)
+			if _walkable(grid, cell):
+				continue
+			if wall_layer.get_cell_source_id(cell) != -1:
+				continue
+			wall_layer.set_cell(cell, SRC_WALL, Vector2i(WALL_BLOCK, 0))
+			sealed += 1
+	if sealed > 0:
+		print("wall seal     : %d cell(s) had no collision, now closed"
+			% sealed)
+
+
+## A solid ring of static bodies around the whole map, BORDER_THICK cells deep.
+##
+## The tile seal only covers cells inside the grid. This covers everything
+## outside it, so no speed or knockback can put the player beyond the map. Four
+## rectangles, not tiles, so no painting rule can undo it.
+func _place_border(body: Node2D) -> void:
+	var cell_px := float(GRID * SCALE)
+	var w := float(MAP_W) * cell_px
+	var h := float(MAP_H) * cell_px
+	var t := float(BORDER_THICK) * cell_px
+	var ring := StaticBody2D.new()
+	ring.name = "Border"
+	ring.collision_layer = Layers.WORLD
+	ring.collision_mask = 0
+	body.add_child(ring)
+	# Centre position and size of each of the four slabs.
+	var slabs := [
+		Vector4(w * 0.5, -t * 0.5, w, t),
+		Vector4(w * 0.5, h + t * 0.5, w, t),
+		Vector4(-t * 0.5, h * 0.5, t, h + t * 2.0),
+		Vector4(w + t * 0.5, h * 0.5, t, h + t * 2.0),
+	]
+	for i in slabs.size():
+		var v: Vector4 = slabs[i]
+		var cs := CollisionShape2D.new()
+		cs.name = "Slab%d" % i
+		var box := RectangleShape2D.new()
+		box.size = Vector2(v.z, v.w)
+		cs.shape = box
+		cs.position = Vector2(v.x, v.y)
+		ring.add_child(cs)
 
 
 ## The outline sides of a FLOOR cell: any side that is not floor and not a cap.

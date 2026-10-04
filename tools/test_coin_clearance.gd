@@ -26,8 +26,8 @@ const CELL := 16.0
 const COINS_PER_DROP := 2
 const SEEDS := 20
 ## Must match coin.gd's CLEARANCE, restated so the suite fails if the two drift.
-## Was 14.0 at the 20-wide feet box, and 20.0 at the old 43x67.
-const WANT_CLEARANCE := 13.0
+## Was 13.0 at the 16-wide box, 14.0 at the 20-wide feet box, 20.0 at 43x67.
+const WANT_CLEARANCE := 12.5
 const EPS := 0.05
 
 var _fails: Array[String] = []

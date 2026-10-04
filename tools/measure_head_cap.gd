@@ -123,6 +123,73 @@ func _cell_world(cell: Vector2i) -> Vector2:
 			+ Vector2(BUILDER.GRID, BUILDER.GRID) * 0.5 * BUILDER.SCALE
 
 
+func _sweep_boundaries() -> void:
+	var cell_px := float(BUILDER.GRID * BUILDER.SCALE)
+	var grid: Array = _dungeon.get("_grid")
+	# Inline bounds: _in_bounds is an instance method, so it cannot be called on
+	# the preloaded class from a --script harness.
+	var in_map := func(c: Vector2i) -> bool:
+		return c.x >= 0 and c.y >= 0 \
+				and c.x < BUILDER.MAP_W and c.y < BUILDER.MAP_H
+	var is_floor := func(c: Vector2i) -> bool:
+		return in_map.call(c) and bool(grid[c.y][c.x] == 1)
+	var spots: Array[Vector2i] = []
+	# Every boundary cell of every room, every corridor, and every corner.
+	for name in BUILDER.ROOMS.keys():
+		var r: Rect2i = BUILDER.ROOMS[name]
+		for x in range(r.position.x, r.end.x):
+			spots.append(Vector2i(x, r.position.y))
+			spots.append(Vector2i(x, r.end.y - 1))
+		for y in range(r.position.y, r.end.y):
+			spots.append(Vector2i(r.position.x, y))
+			spots.append(Vector2i(r.end.x - 1, y))
+	for c in BUILDER.CORRIDORS:
+		var rect: Rect2i = c
+		for y in range(rect.position.y, rect.end.y):
+			spots.append(Vector2i(rect.position.x, y))
+			spots.append(Vector2i(rect.end.x - 1, y))
+		for x in range(rect.position.x, rect.end.x):
+			spots.append(Vector2i(x, rect.position.y))
+			spots.append(Vector2i(x, rect.end.y - 1))
+	# The four outer corners of the map.
+	spots.append(Vector2i(0, 0))
+	spots.append(Vector2i(BUILDER.MAP_W - 1, 0))
+	spots.append(Vector2i(0, BUILDER.MAP_H - 1))
+	spots.append(Vector2i(BUILDER.MAP_W - 1, BUILDER.MAP_H - 1))
+
+	# Eight directions, so a diagonal escape cannot hide behind an axis one.
+	var dirs := [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT,
+			Vector2i(-1, -1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(1, 1)]
+	var escapes: Array[String] = []
+	var tried := 0
+	for spot in spots:
+		if not in_map.call(spot):
+			continue
+		if not bool(grid[spot.y][spot.x] == 1):
+			continue
+		for d in dirs:
+			tried += 1
+			_player.global_position = Vector2(spot) * cell_px \
+					+ Vector2(cell_px, cell_px) * 0.5
+			_player.set("velocity", Vector2.ZERO)
+			var push := Vector2(d) * 4000.0
+			for f in 60:
+				_player.set("velocity", push)
+				_player.call("move_and_slide")
+				var cp := _player.global_position
+				var cell := Vector2i(int(floor(cp.x / cell_px)), int(floor(cp.y / cell_px)))
+				var ok: bool = is_floor.call(cell)
+				if not ok:
+					escapes.append("%s pushed %s left the floor at %s"
+							% [spot, str(d), str(cell)])
+					f = 60
+	print("boundary sweep: %d boundary cells, %d pushes, %d escape(s)"
+			% [spots.size(), tried, escapes.size()])
+	for e in escapes.slice(0, 6):
+		_ok(false, e)
+	_ok(escapes.is_empty(), "%d escape(s) out of the dungeon" % escapes.size())
+
+
 func _report() -> void:
 	var rect: RectangleShape2D = _shape.shape as RectangleShape2D
 	print("shape in scene : size %s, node pos %s"
@@ -151,13 +218,19 @@ func _report() -> void:
 		# more clearance as more overlap, which is how an earlier draft of this
 		# file "fixed" a box that was never broken.
 		var overlap := base - ink
+		# The box is deliberately ink height MINUS HEAD_OVERLAP_PX, so the hat is
+		# allowed to sit that far inside the wall - that slack is what stops the
+		# whole character being pinned a cell back from every north wall. So the
+		# budget is HEAD_OVERLAP_PX, not zero.
+		var budget: float = BUILDER.HEAD_OVERLAP_PX + 0.25
 		print("  %-10s cell %-10s ink_top %8.2f  wall_base %8.2f  overlap %6.2f"
 				% [spot["name"], str(spot["cell"]), ink, base, overlap])
 		worst = maxf(worst, overlap)
 		_ok(base > 0.0, "%s: no wall found north of the player" % spot["name"])
-		_ok(overlap <= 0.0,
-				"%s: the hat overlaps the cap by %.2f px (ink %.2f vs wall %.2f)"
-				% [spot["name"], overlap, ink, base])
+		_ok(overlap <= budget,
+				"%s: the hat overlaps the cap by %.2f px, budget %.2f"
+				% [spot["name"], overlap, budget])
+	_sweep_boundaries()
 	print("worst overlap : %.2f px" % worst)
 	print("assertions    : %d" % _checks)
 	if _fails.is_empty():
