@@ -173,7 +173,7 @@ func _ready():
 	# so the very first physics frame already happens at the right place.
 	snap_to_player_start()
 
-	var dungeon := get_node_or_null("../../Dungeon")
+	var dungeon := get_node_or_null("../Dungeon")
 	if dungeon != null:
 		_grid = dungeon.get("_grid")
 
@@ -219,6 +219,13 @@ func _physics_process(delta):
 		_animate_walk(delta)
 	else:
 		_animate_idle(delta)
+
+	# The attack key is read HERE, at the tail of _physics_process, and nowhere
+	# else. A helper function inserted in the middle of this body once stranded
+	# it after a `return`, so it compiled perfectly and the attack silently did
+	# nothing - no error, no failure, just a game where the sword was dead.
+	if Input.is_action_just_pressed("attack"):
+		do_attack()
 
 ## Catches the player if they end a frame off the floor, whatever moved them.
 ##
@@ -282,13 +289,10 @@ func _nearest_floor_centre(p: Vector2) -> Vector2:
 					continue
 				return Vector2(c) * cell_px + Vector2(cell_px, cell_px) * 0.5
 	# Nothing within 12 cells: the PlayerStart is always floor, so fall back.
-	var marker := get_node_or_null("../../Dungeon/PlayerStart") as Marker2D
+	var marker := get_node_or_null("../Dungeon/PlayerStart") as Marker2D
 	if marker != null:
 		return marker.global_position
 	return p
-
-	if Input.is_action_just_pressed("attack"):
-		do_attack()
 
 func _get_dir_col(dir: Vector2) -> int:
 	
