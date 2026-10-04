@@ -42,8 +42,17 @@ static func drop(parent: Node, origin: Vector2, count: int,
 		coin.name = "Coin%d" % i
 		coin.position = local
 		# Lets the bounce stop at a wall instead of sliding through it.
+		#
+		# This MUST be set while the coin is still OUTSIDE the tree, and it must
+		# name the real member `_walkable`. It used to be
+		# `coin.set("walkable", walkable)` - a property that does not exist on
+		# coin.gd, which has a `_walkable` var and a set_walkable() method.
+		# Object.set() on an unknown name fails silently, so the callable never
+		# reached the coin, _can_stand() always returned true and every coin
+		# scattered straight through the masonry. Set it before add_child so
+		# _ready() can already see it and snap an unsafe spawn point.
 		if walkable.is_valid():
-			coin.set("walkable", walkable)
+			coin.set("_walkable", walkable)
 		# Above the floor and props, below nothing that matters. Without this the
 		# coin drew behind the dungeon layers and looked like it had not spawned.
 		coin.z_index = 40

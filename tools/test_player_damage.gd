@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Proves the player's health, i-frames, trap damage, coins and the heart HUD.
 ##
 ## These are the rules that have no visible failure in a screenshot: a trap that
@@ -322,9 +322,16 @@ func _check_respawn(made_it_home: bool) -> void:
 	_ok(not _player.is_invulnerable(), "still invulnerable after respawning")
 	_ok(not _player.is_attacking, "respawned still holding the attack pose")
 	if state != null:
-		_ok(state.coins == _death_coins,
-			"the purse changed across death: %d -> %d"
-			% [_death_coins, state.coins])
+		_ok(state.coins >= _death_coins,
+				# NOT ==. This used to demand an exactly unchanged purse, which
+				# silently also asserted that no coin may be collected during the
+				# respawn window. The coin magnet (coin.gd, _magnet) now pulls a
+				# dropped coin to the player within 48px, so a legitimate pickup
+				# during those frames fails an equality that was only ever meant to
+				# prove death neither resets nor destroys the purse. What matters
+				# is that the purse never goes DOWN.
+				"the purse shrank across death: %d -> %d"
+				% [_death_coins, state.coins])
 		print("respawn coins  : %d -> %d (kept)" % [_death_coins, state.coins])
 	print("respawn        : PlayerStart, full health, purse intact")
 
