@@ -43,13 +43,15 @@ const CELL := 16.0
 ## Clearance a coin needs from any wall, in LOCAL pixels.
 ##
 ## Testing only the coin's CENTRE cell is not enough, and that was the second
-## half of the bug. The player is 43x67 RENDERED px, i.e. 21.5 rendered px of
-## half-width, and the coin's pickup circle is 9 local px = 18 rendered px. The
-## player is blocked by walls, so a coin resting inside that ~20 local px strip
-## next to a wall is a coin the player physically cannot walk into range of -
-## it is visible, it is there, and it can never be collected. This is that
-## strip: (21.5 + 18) rendered px halved into local space, rounded up.
-const CLEARANCE := 20.0
+## half of the bug. A coin resting inside the strip of floor the player cannot
+## physically enter is a coin the player can never walk into range of - it is
+## visible, it is there, and it can never be collected. This is that strip.
+##
+## Player half-width + coin pickup radius, halved into local space: the player
+## collider is now a 20x16 feet box (Main.tscn), so 10 rendered px, plus the
+## coin's 9 local px (18 rendered) radius = 28 rendered = 14 local. It was 20
+## when the collider was the old 43x67.
+const CLEARANCE := 14.0
 
 ## Magnet range in LOCAL px (48 rendered px at the Dungeon's 2x scale).
 const MAGNET_RANGE := 24.0

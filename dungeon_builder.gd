@@ -59,7 +59,12 @@ const MAP_H := 43
 # The player's collider in Main.tscn is 43x67 px, which is 1.4 x 2.1 cells at
 # SCALE 2, so a corridor has to be 3 cells (96 px) across to be walkable.
 const MIN_CORRIDOR := 3
-const PLAYER_HALF := Vector2(21.5, 33.5)
+## Half the player's collider, in RENDERED px. Must track Main.tscn's
+## CollisionShape2D rectangle, which is now a 20x16 feet box - was 43x67, half
+## (21.5, 33.5). This is the number the clearance checks are derived from, so
+## leaving it at the old value would keep enforcing a collider the player no
+## longer has.
+const PLAYER_HALF := Vector2(10, 8)
 const PROP_CLEARANCE := Vector2(26, 26)
 
 # --- Generated art ----------------------------------------------------------

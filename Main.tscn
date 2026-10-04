@@ -8,7 +8,14 @@
 [ext_resource type="Script" path="res://inventory_ui.gd" id="6_invui"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_r0du0"]
-size = Vector2(43, 67)
+# FEET, not body. The Icon is a 64x64 sheet at hframes/vframes 4, so one frame is
+# 16x16 and at scale 1.2 it draws 19.2x19.2 rendered px. This rect used to be
+# 43x67 - 1.34 tiles wide and 2.1 tiles tall, i.e. more than twice the visible
+# character in every direction - which is why a 3-wide corridor felt like a
+# 1-tile squeeze and why coins near a wall could not be walked into range of.
+# 20x16 sits inside the drawn feet (sprite spans y -9.6..+9.6), and `position`
+# below drops it to the base of that span.
+size = Vector2(20, 16)
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_jsssl"]
 radius = 17.20465
@@ -28,7 +35,10 @@ vframes = 4
 frame = 4
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player(CharacterBody2D)" unique_id=1725347124]
-position = Vector2(-2, 1)
+# y=2 puts the 16px-tall box on the feet: the sprite's lower edge is at +9.6, so
+# a centred 16px box there spans y -6..+10. The old (-2, 1) was centred on the
+# body and only made sense for the old 43x67 rect.
+position = Vector2(0, 2)
 shape = SubResource("RectangleShape2D_r0du0")
 
 [node name="AttackArea(Area2D)" type="Area2D" parent="Player(CharacterBody2D)" unique_id=400335431]

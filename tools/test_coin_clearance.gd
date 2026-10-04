@@ -26,7 +26,8 @@ const CELL := 16.0
 const COINS_PER_DROP := 2
 const SEEDS := 20
 ## Must match coin.gd's CLEARANCE, restated so the suite fails if the two drift.
-const WANT_CLEARANCE := 20.0
+## Was 20.0 while the player collider was the old 43x67 box.
+const WANT_CLEARANCE := 14.0
 const EPS := 0.05
 
 var _fails: Array[String] = []
