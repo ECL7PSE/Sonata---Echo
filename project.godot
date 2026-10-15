@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Echo"
-run/main_scene="uid://cn0mdw3ju0ns3"
+run/main_scene="res://start_screen.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -20,11 +20,14 @@ config/icon="res://icon.svg"
 GameState="*res://game_state.gd"
 Inventory="*res://inventory.gd"
 Audio="*res://audio_manager.gd"
+PlatformTweaks="*res://platform_tweaks.gd"
 
 [display]
 
+window/size/viewport_width=1152
+window/size/viewport_height=648
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/stretch/aspect="keep"
 
 [input]
 

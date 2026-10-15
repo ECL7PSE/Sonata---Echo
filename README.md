@@ -71,6 +71,243 @@ Testing Movement: Movement was somewhat smooth and the walking animation is flui
 <img width="1921" height="1081" alt="image" src="https://github.com/user-attachments/assets/156352ef-dc6c-4aff-8dd5-227339e132e6" />
 Testing Attack: Attack animations was implemented into the 4 directions depending to where the Sprite is looking, a simple animation of the Sprite was added during the slash and a custom pixelated effects at the slash was added.  
 
+## Activity 3 — Tile Map & Dungeon Layout
+
+![Dungeon Overview](screenshots/08-dungeon-overview.png)
+Dungeon Overview: the finished **43 x 31** tile dungeon — **490 walkable cells**, **5 halls and 4 corridors**, 287 stone cells and a 139-cell invisible rim — built entirely from the tile sheets that already ship in `Assets/Dungeon`. Each hall is ringed by a two-cell-thick masonry band capped with a bright mint line, so the rooms read as lit floors inside solid walls. Past the band the world simply stops: a thin outline marks the edge and everything beyond it is black.
+
+![Dungeon Gameplay](screenshots/09-dungeon-gameplay.png)
+In-Game View: the player spawns in the pillared hall. The scene is dimmed with a `CanvasModulate` and the standing torches are real `PointLight2D`s, scattered per room from a seeded RNG so no two halls are lit the same way. The spike traps on the right are `trap.gd` — they never block you, they just make you cross slowly, and they stay flat for a predictable two seconds each cycle.
+
+### Telling the floor tiles from the wall tiles
+
+The pack ships as loose sheets (`T001-T003.png`, `C001.png`, `P001.png`, `TP001.png`, ...) instead of a ready made atlas, so I measured them first — opaque fraction per 16px cell — rather than guessing where each piece started. That measurement is what settles which art is floor and which is wall, and `T002.png` (208x176 px = 13x11 cells) splits cleanly in two:
+
+| Sheet region | Artwork | Role |
+| --- | --- | --- |
+| `T002` rows 0-5 | dense, flat, full-cell brick | **FLOOR** — walkable ground only |
+| `T002` row 7 | thin mint strokes: `(7,7)` corner, `(8,7)` straight, `(9,7)` corner, `(0,7)` / `(2,7)` verticals | **WALL top edges** |
+| `T002` row 8 | `(4,8)` mint cap bar, and the doorway arch | **WALL cap + door** |
+| `T002` row 9 | eight distinct masonry blocks, e.g. `(0,9)` | **WALL body** — raised masonry |
+
+The floor brick and the wall body are different artwork, which is the whole point: using the rows 0-5 flat brick as a wall is what makes a border read as "more floor" instead of as a wall standing above it.
+
+`Tile/T003.png` is deliberately **not** used — its pieces are pre-drawn wall *structures* with hollow gaps, not tiles.
+
+### Walls: built from the wall kit, not stamped from floor tiles
+
+Every piece in the wall kit is an **8px fragment sitting in half of its 16px cell**, so none of them can be used as a tile directly: placed one-per-cell, half of every cell is blank, which is what produced the earlier dashed caps and gaps. `_wall_atlas()` therefore composes them into real full-cell tiles once, at build time.
+
+Shape and brickwork are two independent axes. The **shape** comes from which sides of that cell face open space, so corners, straight runs and steps all fall out of one rule and the wall follows the room's silhouette. The **brick** is one of eight row-9 masonry blocks, picked per cell by a hash of its coordinate. Hashing rather than randomising keeps the band stable across runs and frames while still varying enough that neighbouring cells do not match.
+
+| Shape | Used when |
+| --- | --- |
+| `WALL_BODY` | fully buried in the band |
+| `WALL_TOP` | open above |
+| `WALL_TOP_L` | open above and left |
+| `WALL_TOP_R` | open above and right |
+| `WALL_SIDE_L` | open left |
+| `WALL_SIDE_R` | open right |
+
+Because shape is decided separately, randomising the brick can never turn a corner into a straight run. Three details that are easy to get wrong and are handled explicitly:
+
+* **The cap is cut from `(4,8)`, not `(0,8)`.** Both hold a mint bar, but `(0,8)`'s starts on a 2px near-black bevel, so repeating it prints a dark notch every 8px. `(4,8)` is 8 unbroken bright pixels.
+* **Fragments are composited pixel-by-pixel, not blitted.** `blit_rect` copies transparency as well as colour, so a mostly-empty fragment erases the brick under it and punches a hole in the wall. `_stamp()` keeps only opaque pixels.
+* **Each brick is cut at its measured width, not a fixed 8px.** The eight row-9 bricks are not uniform: `(7,9)` is 9px wide in the *left* half of its cell and `(6,9)` straddles both halves. Assuming "8x8 in the right half" left variant 5 completely empty and printed a black hole in the wall wherever the hash chose it. `WALL_BRICK_SRC` records the real rectangle for each brick, and `check_layout` would not have caught this — it is a pixel bug, so the fix was to *measure* it.
+
+Walls are a `WALL_RING = 2` band of solid rock; a one-cell wall has no face for the cap to sit on. Only the wall layer carries collision, so the player is stopped by walls and moves freely on the floor.
+
+The wall is drawn at the sheet's own colour. An earlier build tinted the layer `Color(0.68, 0.74, 0.82)` to push it into shadow; that recoloured the artwork and has been removed.
+
+### The edge of the world: an invisible boundary
+
+Just outside the stone band sits a **one-cell rim** drawn from a second set of tiles that contain no masonry at all — only a thin outline along whichever sides still touch stone. Everything past it is the pure black clear colour from `project.godot`. The player is stopped by the outline exactly as he would be by rock: every void tile carries the same full-cell collision as a solid one, so an invisible wall with no hitbox would just be a hole in the map.
+
+The rim is defined as *touching the band*, not touching the floor. That distinction is the whole bug this section exists to document: testing for adjacent floor is exactly what `_is_band()` already does, so the two predicates came out byte-identical and the void tiles were unreachable — the "invisible boundary" was drawn nowhere and silently did nothing. `check_layout.gd` now asserts the rim is non-empty and that every void tile really collides, because a boundary that exists only in a function nobody calls is not a boundary.
+
+### Layers inside dungeon.tscn
+
+* `Floor` — bright brick on every walkable cell, picked in a regular bond keyed on the cell coordinate (never at random; a random pick per cell made the floor look like TV static).
+* `Hazards` — the spike traps, at `z_index` 0 so they sit flat in the floor and the player walks *over* them.
+* `Walls` — the band built from `T002`'s wall kit (raised brick body, lit cap, corners) in the sheet's own colours, plus the outlined invisible rim beyond it. The only layer with collision.
+* `Props` — chests, pots, crates and torches.
+* `EnemySpawns` — a `Marker2D` at the centre of each hall, so enemy spawning has somewhere to aim. No enemies are spawned yet.
+
+### Level layout
+
+The layout is written as a list of carved rectangles at the top of `dungeon_builder.gd`, so rooms and corridors are edited in one readable place:
+
+```
+     cistern --- crypt --- forge
+        |                    |
+       hall --- vault -------+
+```
+
+* **hall** - the spawn hall: a chest, and the player spawn.
+* **cistern** - the west hall, dotted with breakable pots.
+* **crypt** - the north burial room, with a chest.
+* **forge** - the north-east workshop, stacked with crates.
+* **vault** - the treasure vault, its long approach guarded by a full-width spike strip.
+
+The four corridors wire them into a **tree, not a loop**: `hall - cistern - crypt - forge`, with `hall - vault` hanging off the spine. This used to be a five-corridor loop, but the forge-to-vault shortcut was removed to open the map up, and with it went the only way to circle back — so the level is now a branching route rather than a loop. Every corridor is 3 cells (96 px) across, which is the minimum the player's 43x67 px collider can turn around in.
+
+### The tiles sheet IS the map
+
+Everything is drawn from `Assets/Dungeon/dungeon_V.1.0.0_nyknck/Tile/T002.png` (208x176 px = 13x11 cells of 16 px), measured cell by cell rather than eyeballed. The floor and the walls come from **different artwork in that one sheet**, which is what separates the two surfaces:
+
+* **Floor and walls are different bricks.** The floor uses the flat brick from T002's rows 0-5 at full brightness; the wall uses the masonry blocks from T002's row 9. Drawing both from the same flat tile is what made an earlier build look like one field of static with no boundary.
+* **Walls** are a two-cell band of rock around the walkable area, then the outlined rim, then nothing. The wall-to-floor ratio is **0.59** and `check_layout.gd` prints it, because when that number climbs the map turns into noise.
+* **The band is built, not stamped.** Each cell picks its wall variant from the sides that face open space, so the lit top cap turns correctly into corners and down the sides instead of repeating as a dashed border. The full breakdown is under [Walls: built from the wall kit](#walls-built-from-the-wall-kit-not-stamped-from-floor-tiles).
+* **Coins** were tried and removed: a coin has no collision, so `_validate` had to special-case it as a non-blocking prop, and 19 scattered sprites read as clutter on a floor that is already busy. Gold now comes only from opening a chest.
+
+### Traps
+
+`TRAPS` is one list of cells, and each cell becomes a single `trap.gd` node holding **both** the 14-frame TP001 spike loop and the Area2D that slows the player, so the artwork and the hitbox can never drift apart. A trap is never solid — it costs time, not a life.
+
+The TP001 art needed **no** help from us. Rendering all 14 frames over the floor colour showed the spike strip already draws its own dark hole in the base of the cell, with the spike rising out of it, fully retracted in frames 1-2. It is a self-contained floor tile, so it is placed straight onto the floor with nothing under it. An earlier build drew a dark `Hazards` *tile* beneath every trap to "make the hazard readable"; that was the cause of the floating look, because an extra opaque square over a self-contained tile only darkened a hole the art had already drawn.
+
+Traps then had a second, separate floating bug: they lived in the `Props` node at `z_index` 2, which is *above* the player, so walking through a strip looked like passing underneath a floating slab. They now sit in their own `Hazards` node at `z_index` 0, flat on the floor, and the player stands on the spikes.
+
+Strips are laid two ways on purpose: **full-width** ones span the corridor and have to be crossed slowly, while **staggered** ones sit down the middle and can be stepped around if you spot them in time.
+
+#### The two-second safe window
+
+Looping all 14 TP001 frames gives roughly one second of travel per revolution with no pause, so the spikes flickered and there was never a safe moment to plan a crossing. The frames were therefore *measured* before the cycle was written, not assumed:
+
+| Frames | What they show | Phase |
+| --- | --- | --- |
+| 1-3, 14 | no spike visible | **DOWN** |
+| 4-7 | spikes extending | rising |
+| 8-9 | spikes at full height | up |
+| 10-13 | spikes retracting | falling |
+
+`trap.gd` drives the cycle by hand rather than handing it to `AnimatedSprite2D` playback, because the pause has to be exact: hold **DOWN for `safe_time` (2.0 s)**, then play frames 4-13 once at `cycle_fps` (9 fps, so 1.11 s), then hold DOWN again. The player gets a flat, predictable two-second window every 3.11 s to start a crossing, and `test_trap_cycle.gd` verifies that by watching which frames a live trap actually displays.
+
+The slow is applied the instant the phase flips to TRAVEL rather than on the next tick. That is not cosmetic: with the slow lagging a frame behind, a trap could be visibly out of the floor while still letting the player walk across at full speed, which is exactly the failure the safe window exists to rule out.
+
+The slow is not a one-off hack. `character_body_2d.gd` keeps a dictionary of active penalties keyed by the source that set them, and `current_speed()` returns the base speed with the **strongest** active slow applied. Taking the strongest rather than multiplying matters: the player collider is 43x67 px while a tile is only 32 px, so stepping onto a three-tile strip genuinely overlaps all three traps. Multiplying gave 0.09x — effectively frozen, which reads as a bug — whereas the minimum caps the penalty at one trap's worth and is predictable.
+
+### Game feel extras
+
+* `prop_breakable.gd` — the player's existing `AttackArea(Area2D)` is only switched on for a few frames during a slash, so chests, pots and crates are `Area2D`s that listen for it: pots and crates shatter (8 and 7 frame animations) and chests open once (7 frames) and throw a short arc of coins. Chests carry no "[J]" prompt label: the slash opens them exactly like every other prop, so a floating key hint in world space was pure clutter (and it named a key, `J`, that is not even bound — the attack is `K`).
+* `torch.gd` — every torch flickers its `PointLight2D` energy with two out-of-phase sine waves, so the light never looks static. **Where** the torches stand is generated rather than listed: per room, a seeded RNG (`TORCH_SEED`) draws how many lights that room gets and then places each one, keeping a minimum Chebyshev gap from the ones already placed. The seed is fixed, so the lighting is varied but identical on every run. Candidates are rejected on top of props, on traps, and inside a corridor — the room and corridor rectangles overlap where they meet, so the doorway rule is checked rather than assumed.
+* `trap.gd` — applies and removes its own speed penalty, keyed by instance id so leaving one trap can never clear another's.
+* `Camera2D` — added to the player with position smoothing and limits set to the dungeon bounds, so the camera follows the player and never shows anything outside the map.
+* `project.godot` — the default texture filter is set to nearest so the pixel art stays crisp in the x2 scaled dungeon.
+
+### Checking the layout
+
+The dungeon refuses to be shipped wrong. `check_layout.gd` runs the builder's **own** `_build_grid` and `_validate` (rather than a second copy of the rules), prints an ASCII map with a letter on every chest, trap, torch, pot and crate (`#` stone, `:` the outlined rim), and fails on any unreachable cell, corridor narrower than the player, a blocking prop in a corridor, a prop off the floor, two props in one cell, or a trap that is unreachable, duplicated or covered by a prop. It also prints the wall-to-floor ratio, because that number is what separates a dungeon from a field of static.
+
+It then boots the real `Main.tscn` and counts the nodes that actually ended up in the tree, proving the player spawn lands on carved floor and that every declared prop really was built. That second step exists because the first one is not enough: instantiating a scene during `_initialize()` runs before `root` is inside the tree, so `_ready` never fires, the dungeon silently builds nothing, and a layout check happily passes on an empty scene.
+
+Three checks were added with this work, because each covers a defect that was invisible in a screenshot:
+
+* **The rim must exist and must collide.** A count of void cells, plus a read of each one's collision polygons. This is the only thing standing between "invisible boundary" and a function that is never called.
+* **No torch may sit in a doorway.** The room and corridor rectangles overlap where they meet, so a cell chosen from inside a room rect can still be a corridor's throat. This is tested against the generated positions rather than assumed, precisely because the placement is randomised.
+* **The removed hallway must stay removed.** Any floor or trap left in `Rect2i(33, 13, 3, 8)` is reported, so a partial deletion cannot pass silently.
+* **All eight wall bricks must appear.** The brick is picked by a hash, so a variant that renders as an empty tile is invisible to a layout check and shows up only as an unexplained hole in the wall.
+
+`test_trap_slow.gd` boots the real `Main.tscn`, walks the player onto **every** trap, and checks the speed it would actually move at: that each trap slows, that overlapping traps do not stack into a freeze, that stepping off restores full speed exactly, and that the cycle repeats.
+
+`test_trap_cycle.gd` watches a live trap's animation frames and confirms frames 4-13 play in order, that the flat pose returns twice, and that the window between the spikes going down and rising again is a genuine 2.00 s. It times *transitions* against the wall clock rather than counting samples: headless runs idle frames far faster than the trap's cadence, so summing per-sample hits on the flat frame measures the sampler, not the trap.
+
+Current results: `RESULT: OK` from all three, with **490 walkable cells**, **287 stone cells**, a **139-cell** invisible rim, **10 traps**, **9 scattered torches** and all **8 of 8** wall brick variants present, at a wall-to-floor ratio of **0.59**.
+
+### Rebuilding and checking
+
+```
+godot --headless --path . --script res://tools/check_layout.gd    # proves the map is playable, prints an ASCII map
+godot --headless --path . --script res://tools/test_trap_slow.gd  # proves the traps slow and always let go
+godot --path . --script res://tools/capture_screenshots.gd        # refreshes the two screenshots above
+```
+
+Controls: `WASD` to move, `K` to attack (the slash breaks pots and crates, and opens chests).
+
+## Week 7: Enemy AI Improvements
+
+I improved enemy AI (patrol, detection, chase, attack).
+
+Enemies patrol between waypoints (or idle in place when no patrol route is
+assigned), detect the player with a vision/trigger radius, chase the player
+once seen, and attack in melee range with a short cooldown. Losing sight of
+the player for a few seconds makes them return to patrol instead of chasing
+forever. No gameplay tuning beyond that AI state work.
+
+## Week 8: Multi-Platform Export & Team Git
+
+Platforms: **Windows PC** (Platform 1) and **Web (HTML5)** (Platform 2).
+Engine: **Godot 4.7 (Forward Plus)**. Existing inputs reused unchanged:
+`move_up` (W), `move_down` (S), `move_left` (A), `move_right` (D),
+`attack` (K). No gameplay or game-logic files were rewritten.
+
+### Platform tweak and why
+
+- Display: `window/stretch/mode="canvas_items"`, `aspect="keep"`,
+  viewport `1152x648` (16:9). `canvas_items` scales UI crisply on any
+  window; `keep` preserves aspect with letterboxing instead of stretching
+  the dungeon. This matches the Web requirement and is harmless on PC.
+- Web "Click to Start" screen: new `start_screen.tscn` (+`start_screen.gd`)
+  is now the main scene and changes to `Main.tscn` on click / `ui_accept`
+  / `attack`. Rationale: browsers block audio until a user gesture, so the
+  gate provides that gesture before the game boots. `Main.tscn` itself is
+  untouched; the button just calls `change_scene_to_file("res://Main.tscn")`.
+- PC fullscreen toggle: `platform_tweaks.gd` autoload listens for F11 and
+  toggles `DisplayServer.WINDOW_MODE_FULLSCREEN` / `WINDOWED`. PC-only per
+  spec; on Web the key is simply ignored by the browser.
+- Defaults chosen (nothing was specified in the brief): Platform 2 = Web,
+  Godot 4.7 per `project.godot`, Godot exe = "find it" (not on PATH on this
+  machine), shared practice repo = "none" so a local bare-repo drill was
+  used instead.
+
+### How to run each build
+
+- PC: run `builds/pc/Echo.exe` (produced by the `Windows PC` preset).
+- Web: `cd builds/web` then `python -m http.server 8000` and open
+  `http://localhost:8000/index.html`. Requirement: serve over HTTP (not
+  `file://`) so COOP/COEP + threads work; use a Chromium browser.
+
+### Export status / real issues
+
+- `export_presets.cfg` contains `Windows PC` and `Web` presets with the
+  paths above.
+- CLI export was attempted but the Godot executable is not on `PATH` on
+  this machine (`godot --version` -> command not found; checked
+  `C:\Program Files\Godot\Godot.exe` and
+  `%LOCALAPPDATA%\Programs\Godot\Godot.exe`, both absent), so no binaries
+  exist yet under `builds/`.
+- Exact manual steps once Godot 4.7 + templates are installed:
+  1. Install the Godot 4.7 export templates
+     (`Editor > Manage Export Templates > Install`, matching 4.7).
+  2. Open the project, then `Project > Export...` and confirm both
+     presets validate, or from a terminal with Godot on PATH run:
+     `godot --headless --path . --export-release "Windows PC" builds/pc/Echo.exe`
+     `godot --headless --path . --export-release "Web" builds/web/index.html`
+  3. If templates are missing the CLI prints
+     `ERROR: No export template found`; fix from CLI is not possible
+     without the template pack, so install them via the editor or
+     download the `Godot_v4.7_*_export_templates.tpz` and place under
+     `%APPDATA%\Godot\export_templates\4.7.*`.
+
+### Team Git summary
+
+- Shared practice repo URL: none, so practice ran against a local bare
+  repo in the temp folder acting as "origin".
+- Branch `week8-practice` created, a text file edited, committed, pushed.
+- Deliberate conflict: same line of the same file edited on `main` and
+  `week8-practice`, merged, resolved, committed. Raw markers captured
+  below before resolving.
+
+Conflict markers (3-line explanation):
+
+1. `<<<<<<< HEAD` marks the start of *our* side (the branch we merged
+   into, here `main`) and everything after it up to `=======` is our text.
+2. `=======` is the divider: above is ours, below is *theirs* (the branch
+   being merged in, here `week8-practice`).
+3. `>>>>>>> week8-practice` marks the end of *their* side; resolving means
+   editing the file to the wanted result and committing without markers.
+
+
 
 
 
