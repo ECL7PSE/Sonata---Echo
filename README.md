@@ -307,6 +307,20 @@ Conflict markers (3-line explanation):
 3. `>>>>>>> week8-practice` marks the end of *their* side; resolving means
    editing the file to the wanted result and committing without markers.
 
+Raw captured markers from the drill (`%TEMP%\week8-practice\notes.txt`):
+
+```
+<<<<<<< HEAD
+line1: conflicting edit from main branch
+=======
+line1: edit from week8-practice branch
+>>>>>>> week8-practice
+```
+
+Resolved to `line1: RESOLVED - combined main + week8-practice edits` and
+committed as `resolve merge conflict (kept both)`; branch
+`week8-practice` was pushed to the local `origin` bare repo.
+
 
 
 
