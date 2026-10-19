@@ -1,0 +1,72 @@
+[gd_scene format=3 uid="uid://cn0mdw3ju0ns3"]
+
+[ext_resource type="Script" uid="uid://cw238re3axht2" path="res://character_body_2d.gd" id="1_uu6xs"]
+[ext_resource type="Texture2D" uid="uid://dx6782j1bgs12" path="res://Assets/Player/Dark_Hatman_Topdown_Character/Animations/Idle/darkhatman_idle_sheet_64x64.png" id="2_cm0pq"]
+[ext_resource type="Texture2D" uid="uid://r3mfl87klbtp" path="res://Assets/Player/Dark_Hatman_Topdown_Character/Animations/AttackEffect/attackeffect_sheet_64x64t.png" id="3_slasheffect"]
+[ext_resource type="PackedScene" path="res://dungeon.tscn" id="4_dungeon"]
+[ext_resource type="Script" path="res://health_ui.gd" id="5_healthui"]
+[ext_resource type="Script" path="res://inventory_ui.gd" id="6_invui"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_r0du0"]
+size = Vector2(14, 34.7)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_jsssl"]
+radius = 17.20465
+
+[node name="Node2D" type="Node2D" unique_id=252827031]
+
+[node name="Dungeon" parent="." unique_id=1459863182 instance=ExtResource("4_dungeon")]
+
+[node name="Player(CharacterBody2D)" type="CharacterBody2D" parent="." unique_id=2091494280]
+z_index = 4
+z_as_relative = false
+script = ExtResource("1_uu6xs")
+
+[node name="Icon(Sprite2D)" type="Sprite2D" parent="Player(CharacterBody2D)" unique_id=721354121]
+scale = Vector2(0.9, 0.9)
+texture = ExtResource("2_cm0pq")
+hframes = 4
+vframes = 4
+frame = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player(CharacterBody2D)" unique_id=1725347124]
+position = Vector2(0, -2.95)
+shape = SubResource("RectangleShape2D_r0du0")
+
+[node name="AttackArea(Area2D)" type="Area2D" parent="Player(CharacterBody2D)" unique_id=400335431]
+position = Vector2(0, 18)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player(CharacterBody2D)/AttackArea(Area2D)" unique_id=2010123661]
+position = Vector2(0, 8)
+shape = SubResource("CircleShape2D_jsssl")
+
+[node name="SlashEffect(Sprite2D)" type="Sprite2D" parent="Player(CharacterBody2D)/AttackArea(Area2D)" unique_id=1670759405]
+visible = false
+texture = ExtResource("3_slasheffect")
+hframes = 4
+vframes = 3
+
+[node name="Camera2D" type="Camera2D" parent="Player(CharacterBody2D)" unique_id=1612704971]
+limit_left = 0
+limit_top = 0
+limit_right = 1376
+limit_bottom = 1376
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0
+
+[node name="HealthUI" type="CanvasLayer" parent="."]
+script = ExtResource("5_healthui")
+
+[node name="Margin" type="MarginContainer" parent="HealthUI"]
+anchors_preset = 0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 400.0
+offset_bottom = 80.0
+
+[node name="Row" type="HBoxContainer" parent="HealthUI/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InventoryUI" type="CanvasLayer" parent="."]
+script = ExtResource("6_invui")

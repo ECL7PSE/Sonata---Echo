@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://pillarplaceholder" version=3]
+
+[ext_resource type="Script" path="res://pillar.gd" id="1_pillar"]
+
+
+[node name="Pillar" type="Node2D"]
+z_index = 2
+
+[gl_resource type="ColorRect" id="1_ColorRect"]
+server_facing = false
+modulate = Color(1, 1, 1, 0)
+rect_min_size = Vector2(24, 24)
+theme_override_colors/color = Color(1, 1, 1, 1)
+
+[gl_resource type="Area2D" id="2_InteractArea"]
+z_index = 3
+
+[gl_resource type="CollisionShape2D" id="3_Shape"]
+server_facing = false
+disabled = true
+
+[link node="ColorRect"]
+[link node="InteractArea"]
+

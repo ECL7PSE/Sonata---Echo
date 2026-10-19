@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsgexfogex8l8"
+path="res://.godot/imported/Sword Slash.mp3-e9d11eb932a3c4d2a0d893ee87f21383.mp3str"
+
+[deps]
+
+source_file="res://audio/Sword Slash.mp3"
+dest_files=["res://.godot/imported/Sword Slash.mp3-e9d11eb932a3c4d2a0d893ee87f21383.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

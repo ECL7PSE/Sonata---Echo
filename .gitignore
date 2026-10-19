@@ -1,0 +1,8 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+.export/
+export/
+# Week 8: keep export presets and build output tracked
+!export_presets.cfg
+!builds/
