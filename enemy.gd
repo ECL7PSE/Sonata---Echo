@@ -24,6 +24,8 @@ enum State { IDLE, WANDER, CHASE, ATTACK, HURT, DEAD }
 @export var data: Dictionary = {}
 ## A boss variant: tougher, hits harder, richer. 3B-2 spawns one.
 @export var boss := false
+	## Which room this enemy belongs to, used to gate the room clear chest.
+	@export var room_name := ""
 
 ## The player. Left null so a scene can be dropped in without wiring; the room
 ## trigger in 3B-2 sets it, and the tests set it directly.
@@ -155,6 +157,15 @@ func _return_home() -> void:
 	_play("walk")
 func _ready() -> void:
 	super._ready()
+	# Every enemy is parented by the Dungeon node, so its name is
+	# Enemy_<room>_<x>_<y> (or Mimic_<room>_<suffix>). The room name is what
+	# RoomManager keys on, so derive it once here rather than re-parsing names
+	# everywhere.
+	if name.begins_with("Enemy_"):
+		room_name = name.split("_")[1]
+	elif name.begins_with("Mimic_"):
+		room_name = name.split("_")[1]
+
 	if data.is_empty():
 		push_error("Enemy has no data; nothing to build")
 		return
