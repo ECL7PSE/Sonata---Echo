@@ -323,5 +323,137 @@ committed as `resolve merge conflict (kept both)`; branch
 
 
 
+## Activity 3 — Level Design
 
 
+
+https://github.com/user-attachments/assets/89ced82c-cbf8-4e94-ac13-98b43f25d974
+
+I beta level who although has some bugs i ignore it for now since i want to showcase the progression and the purpose of the game. Before i added enemies i added chest, vases and jars which would soon be filled with loot. you can interact all of them its either you break them or you open. I created this level using sprites of chests and background miscellaneous and ofcoure assets I acquired online such as the tile map and the tile sheets.
+
+
+## Week 4: Enemies and Sprites
+
+Added 8 enemy types, each in its own dungeon room. Every enemy has 5 animations (idle, walk, attack, hurt, death) and is sized to match the player.
+
+### Rat (Vault)
+Fast and weak. The first enemy the player meets.
+
+<img width="391" height="272" alt="Screenshot 2026-10-04 205313" src="https://github.com/user-attachments/assets/5dbadb36-a330-4376-9168-8891e1f9b046" />
+
+
+### Slime (Cistern)
+Slow, with a long attack wind-up.
+
+<img width="370" height="279" alt="Screenshot 2026-10-04 205325" src="https://github.com/user-attachments/assets/47843aa3-16c2-4316-9610-24cf766c4805" />
+
+
+### Mushroom (Crypt)
+Short-range spit attack.
+
+<img width="315" height="269" alt="Screenshot 2026-10-04 205329" src="https://github.com/user-attachments/assets/db7093fe-0193-4d66-8b42-169d7029f3db" />
+
+
+### Bat (Forge)
+Fast flyer that moves erratically.
+
+<img width="261" height="261" alt="Screenshot 2026-10-04 205341" src="https://github.com/user-attachments/assets/4912d25f-1160-4184-99af-82ebfb5b4787" />
+
+
+### Flying Eye (Eye Well)
+Flies, with a ranged-style attack animation.
+
+<img width="261" height="242" alt="Screenshot 2026-10-04 205355" src="https://github.com/user-attachments/assets/9c7ea1d4-18e9-4113-8c85-69558cd6a41b" />
+
+
+### Goblin (Goblin Den)
+Tougher melee enemy.
+
+<img width="249" height="247" alt="Screenshot 2026-10-04 205400" src="https://github.com/user-attachments/assets/859e6659-c92a-4d2b-817a-7b13746561df" />
+
+
+### Mimic (Mimic Den and Crypt)
+Starts as a chest, then bursts open and chases the player.
+
+<img width="259" height="256" alt="Screenshot 2026-10-04 210132" src="https://github.com/user-attachments/assets/9a825550-6231-453f-9c44-06f4de1cd43c" />
+
+
+### Skeleton, boss (Bone Hall)
+The toughest enemy, with double health.
+
+<img width="217" height="295" alt="Screenshot 2026-10-04 205534" src="https://github.com/user-attachments/assets/c0ae106b-d41b-42a8-94ae-2a503c8322b7" />
+
+
+### Also added this week
+- Enemy AI: idle, chase, attack, hurt and death. Attacks only hurt during the animation's damage frames.
+- Enemies wake up when the player enters their room and return home if the player runs too far away.
+- Chests and enemies drop coins that the player collects by walking over them.
+- HUD with hearts and a coin counter.
+- Spike traps that only hurt while the spikes are out.
+- Collision and draw-order fixes so the player no longer clips into walls.
+
+---
+
+## Week 5: Audio
+
+Added music and sound effects, all played through one `AudioManager`.
+
+
+
+https://github.com/user-attachments/assets/198a2819-933a-4868-b60e-a1d78d8c8e82
+
+
+
+### What has sound
+- Looping background music with a fade-in
+- Player: sword slash, footsteps, getting hurt
+- Loot and props: chest opening, coin drop, coin pickup, vase breaking, crate breaking
+- Enemies: attack, hurt and death sounds for each species, plus the Mimic burst
+- Traps: a knife sound when the spikes hit
+
+### Details
+- Enemy sounds only play when the enemy is near the player.
+- Repeated sounds use small random pitch and volume changes.
+- At most 3 copies of the same sound play at once, so coin showers stay clean.
+- Music and effects are on separate audio buses, each with its own volume.
+
+### Credits
+- RPG sounds by Kenney (kenney.nl), CC0.
+- Other effects from Freesound.
+- Exploration | Chiptune RPG Adventure Theme by NickPanek
+
+## Week 7: Enemy AI Improvements
+
+I improved the AI for my enemies so they react to the player instead of just moving in a fixed pattern.
+
+- **Behavior:** enemies patrol, detect the player when in range, chase, and attack
+- **State machine:** Patrol → Chase → Attack → Return to patrol
+- **Detection:** [Area2D detection radius / RayCast2D line of sight]
+- **Tuning:** adjusted speed, attack cooldown, and health so the difficulty feels fair
+- **Result:** enemies are more challenging and respond to the player's position
+
+## Week 8: Multi-Platform Export & Team Git
+
+### Exports
+| Platform | Status | Location |
+|----------|--------|----------|
+| Windows PC | Exported and tested | `builds/pc/` |
+| Web (HTML5) | Exported and tested | `builds/web/` |
+
+### Platform-specific tweak
+For the web build I set the stretch mode to `canvas_items` and the aspect to `keep` in Project Settings (Display → Window), so the game scales correctly in any browser window. [Optional: I also added a "Click to Start" screen because browsers block audio until the player interacts with the page.]
+
+### How to run
+- **PC:** open `builds/pc/[game name].exe`.
+- **Web:** run `python -m http.server` inside `builds/web/`, then open `http://localhost:8000` in a browser. Opening `index.html` directly will not work.
+
+### Team Git practice
+- Created a branch on the shared practice repo and opened a pull request
+- Deliberately created a merge conflict by editing the same line on two branches
+- Resolved the conflict by choosing the correct lines and removing the markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+- Practice repo: [paste link]
+
+### Issues encountered
+- export templates had to be installed first.
+- e.g. web build needed a local server to run.
+`Week 8: multi-platform export + team Git practice`
