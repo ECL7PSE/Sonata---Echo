@@ -24,8 +24,8 @@ enum State { IDLE, WANDER, CHASE, ATTACK, HURT, DEAD }
 @export var data: Dictionary = {}
 ## A boss variant: tougher, hits harder, richer. 3B-2 spawns one.
 @export var boss := false
-	## Which room this enemy belongs to, used to gate the room clear chest.
-	@export var room_name := ""
+## Which room this enemy belongs to, used to gate the room clear chest.
+@export var room_name := ""
 
 ## The player. Left null so a scene can be dropped in without wiring; the room
 ## trigger in 3B-2 sets it, and the tests set it directly.
