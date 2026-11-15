@@ -5,7 +5,7 @@ extends SceneTree
 ## and skipped, never fatal. A broken export must not stop the game, and it must
 ## not stop the test that would otherwise tell you about it.
 
-const AM := preload("res://audio_manager.gd")
+const AM := preload("res://scripts/autoload/audio_manager.gd")
 
 var _fails: Array[String] = []
 var _checks := 0

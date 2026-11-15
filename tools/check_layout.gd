@@ -11,9 +11,9 @@ extends SceneTree
 ## collision-only tile that is not actually transparent (which puts the thick
 ## wall straight back), or a floor that is not darker than the cap.
 
-const BUILDER := preload("res://dungeon_builder.gd")
-const SPAWNER := preload("res://enemy_spawner.gd")
-const monster_db_preload := preload("res://monster_db.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
+const SPAWNER := preload("res://scripts/enemies/enemy_spawner.gd")
+const monster_db_preload := preload("res://scripts/enemies/monster_db.gd")
 ## Test hook. Set to a room name to drop that room's spawns before checking, so
 ## the "a room may not ship empty" assertion can be proved to fire instead of
 ## being assumed to work. Empty in normal runs.
@@ -132,7 +132,7 @@ func _check_mimic_placement(builder: Node2D, grid: Array) -> void:
 		props = _live_main.get_node_or_null("Dungeon/Props")
 	print("")
 	print("mimic dens     :")
-	var mimic_script := preload("res://mimic.gd")
+	var mimic_script := preload("res://scripts/enemies/mimic.gd")
 	for room_name in SPAWNER.MIMIC_DENS:
 		var spec: Dictionary = SPAWNER.MIMIC_DENS[room_name]
 		var want: int = int(spec["count"])
@@ -967,7 +967,7 @@ func _process(_delta: float) -> bool:
 ## Boots the real scene and checks that the player spawns on carved floor and
 ## that every declared prop, trap and torch actually became a node.
 func _check_live_scene(builder: Node2D) -> void:
-	var packed: PackedScene = load("res://Main.tscn")
+	var packed: PackedScene = load("res://scenes/Main.tscn")
 	if packed == null:
 		_fails.append("Main.tscn could not be loaded")
 		return

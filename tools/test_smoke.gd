@@ -7,8 +7,8 @@
 ## it catches the class of fault unit-style checks cannot: an enemy that walks
 ## into a wall, a trigger that never fires, a leash that never lets go.
 
-const BUILDER := preload("res://dungeon_builder.gd")
-const ENEMY_SCRIPT := preload("res://enemy.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
+const ENEMY_SCRIPT := preload("res://scripts/enemies/enemy.gd")
 
 ## Physics frames to step per room trigger.
 const FRAMES_PER_ROOM := 300
@@ -19,8 +19,8 @@ const LIVE_FRAMES := 600
 const LIVE_LEASH := 240.0
 const LIVE_GAP := 252.0
 const LIVE_MAX_RETURNS := 2
-const MIMIC_SCRIPT := preload("res://mimic.gd")
-const MONSTER_DB := preload("res://monster_db.gd")
+const MIMIC_SCRIPT := preload("res://scripts/enemies/mimic.gd")
+const MONSTER_DB := preload("res://scripts/enemies/monster_db.gd")
 const MIMIC_OPEN := 0.5
 const MIMIC_HOLD := 0.15
 const MIMIC_TRANSFORM := 0.58
@@ -47,7 +47,7 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	match _stage:
 		0:
-			_main = load("res://Main.tscn").instantiate()
+			_main = load("res://scenes/Main.tscn").instantiate()
 			root.add_child(_main)
 			_frames = 10
 			_stage = 1
@@ -223,7 +223,7 @@ func _check_live_oscillation() -> void:
 
 
 func _spawn_live(data: Dictionary, at: Vector2, script) -> Node2D:
-	var e: Node2D = (load("res://enemy.tscn") as PackedScene).instantiate()
+	var e: Node2D = (load("res://scenes/enemy.tscn") as PackedScene).instantiate()
 	if script != null:
 		e.set_script(script)
 	e.data = data

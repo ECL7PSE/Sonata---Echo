@@ -6,7 +6,7 @@ extends SceneTree
 ## This drives a real trap from the live scene and watches which animation frame
 ## the sprite ends up on, second by second, rather than trusting the constant.
 
-const TRAP := preload("res://trap.gd")
+const TRAP := preload("res://scripts/world/trap.gd")
 ## Mirrors trap.gd's own constants, restated here so the test fails if they drift.
 const EXPECTED_TRAVEL: Array[int] = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 const EXPECTED_SAFE_SECONDS := 2.0

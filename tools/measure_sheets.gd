@@ -418,11 +418,11 @@ func _write_db(scales: Dictionary, offsets: Dictionary, sizes: Dictionary, dorma
 	for r in rows:
 		out.append(r)
 	out.append("}")
-	var f := FileAccess.open("res://monster_db.gd", FileAccess.WRITE)
+	var f := FileAccess.open("res://scripts/enemies/monster_db.gd", FileAccess.WRITE)
 	f.store_string("\n".join(out))
 	f.close()
 	print("")
-	print("wrote res://monster_db.gd (%d lines)" % out.size())
+	print("wrote res://scripts/enemies/monster_db.gd (%d lines)" % out.size())
 	quit(0)
 
 

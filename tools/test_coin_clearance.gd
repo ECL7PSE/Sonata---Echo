@@ -18,9 +18,9 @@ extends SceneTree
 ## headless happens to idle, so the result is deterministic rather than timing
 ## dependent.
 
-const COIN := preload("res://coin.gd")
-const DROP := preload("res://coin_drop.gd")
-const LOOT := preload("res://loot.gd")
+const COIN := preload("res://scripts/items/coin.gd")
+const DROP := preload("res://scripts/items/coin_drop.gd")
+const LOOT := preload("res://scripts/items/loot.gd")
 
 const CELL := 16.0
 const COINS_PER_DROP := 2
@@ -48,7 +48,7 @@ func _ok(cond: bool, msg: String) -> void:
 
 
 func _initialize() -> void:
-	_main = load("res://Main.tscn").instantiate()
+	_main = load("res://scenes/Main.tscn").instantiate()
 
 
 func _process(_delta: float) -> bool:

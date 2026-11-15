@@ -9,7 +9,7 @@ extends SceneTree
 ## Every number is read off live nodes after the scene has actually run. Nothing
 ## here re-derives a value that a script already decided.
 
-const BUILDER := preload("res://dungeon_builder.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
 const FRAME := 4
 
 var _fails: Array[String] = []
@@ -31,7 +31,7 @@ func _ok(cond: bool, msg: String) -> void:
 
 
 func _initialize() -> void:
-	_main = load("res://Main.tscn").instantiate()
+	_main = load("res://scenes/Main.tscn").instantiate()
 
 
 func _process(_delta: float) -> bool:

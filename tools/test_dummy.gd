@@ -1,4 +1,4 @@
-extends "res://damageable.gd"
+extends "res://scripts/core/damageable.gd"
 ## A bare stand-in for the player, used by the damage tests.
 ##
 ## Damageable is the shared base and every rule under test lives in it, so a

@@ -19,7 +19,7 @@ var _player_camera: Camera2D = null
 var _game: Node = null
 
 func _initialize() -> void:
-	_game = load("res://Main.tscn").instantiate()
+	_game = load("res://scenes/Main.tscn").instantiate()
 	root.add_child(_game)
 	_player_camera = _game.get_node("Player(CharacterBody2D)/Camera2D")
 
@@ -49,7 +49,7 @@ func _process(_delta: float) -> bool:
 
 ## The dungeon in world pixels, read from the builder's own constants.
 func _map_size() -> Vector2:
-	var script: GDScript = load("res://dungeon_builder.gd")
+	var script: GDScript = load("res://scripts/world/dungeon_builder.gd")
 	return Vector2(
 		float(script.get("MAP_W")) * float(script.get("GRID")) * float(script.get("SCALE")),
 		float(script.get("MAP_H")) * float(script.get("GRID")) * float(script.get("SCALE")))

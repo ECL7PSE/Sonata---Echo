@@ -8,7 +8,7 @@ extends SceneTree
 ## opens and the test passes on an empty scene. This drives the real nodes and
 ## asserts the reaction actually happened.
 
-const BUILDER := preload("res://dungeon_builder.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
 
 var _fails: Array[String] = []
 
@@ -38,7 +38,7 @@ var _pot_sprite: AnimatedSprite2D
 func _initialize() -> void:
 	# Instantiating here is safe - it only builds the node, it does not need the
 	# tree to be live. Everything that depends on _ready happens in _process.
-	_main = load("res://Main.tscn").instantiate()
+	_main = load("res://scenes/Main.tscn").instantiate()
 
 
 func _process(_delta: float) -> bool:

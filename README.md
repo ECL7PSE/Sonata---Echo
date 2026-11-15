@@ -251,7 +251,7 @@ Engine: **Godot 4.7 (Forward Plus)**. Existing inputs reused unchanged:
   is now the main scene and changes to `Main.tscn` on click / `ui_accept`
   / `attack`. Rationale: browsers block audio until a user gesture, so the
   gate provides that gesture before the game boots. `Main.tscn` itself is
-  untouched; the button just calls `change_scene_to_file("res://Main.tscn")`.
+  untouched; the button just calls `change_scene_to_file("res://scenes/Main.tscn")`.
 - PC fullscreen toggle: `platform_tweaks.gd` autoload listens for F11 and
   toggles `DisplayServer.WINDOW_MODE_FULLSCREEN` / `WINDOWED`. PC-only per
   spec; on Web the key is simply ignored by the browser.

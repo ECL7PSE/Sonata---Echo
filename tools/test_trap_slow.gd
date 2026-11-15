@@ -7,7 +7,7 @@ extends SceneTree
 ## slow that never lifts, and traps whose hitboxes silently overlap so the player
 ## is slowed by three traps at once without any way to tell.
 
-const MAIN := "res://Main.tscn"
+const MAIN := "res://scenes/Main.tscn"
 ## Fail if the player drops below this fraction of base speed on one trap.
 const MIN_SINGLE := 0.2
 ## Fail if one trap leaves the player slower than this fraction of base.

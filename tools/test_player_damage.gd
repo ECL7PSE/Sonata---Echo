@@ -6,7 +6,7 @@
 ## window, a coin that can be picked up before it has scattered, a health value
 ## that goes negative. Each is asserted here against the real nodes.
 
-const BUILDER := preload("res://dungeon_builder.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
 
 var _fails: Array[String] = []
 ## Checks that could not be made in this environment. Reported, never hidden.
@@ -145,7 +145,7 @@ var _trap: Node2D
 func _process(_delta: float) -> bool:
 	match _stage:
 		0:
-			_main = load("res://Main.tscn").instantiate()
+			_main = load("res://scenes/Main.tscn").instantiate()
 			root.add_child(_main)
 			_frames = 10
 			_stage = 1
@@ -236,7 +236,7 @@ func _process(_delta: float) -> bool:
 ##
 ## The formula test above proves the arithmetic; this proves the wiring - that the
 ## HUD is on a CanvasLayer, that it is connected to health_changed, and that the
-## three heart textures are the ones actually assigned.
+## segmented bar lights the right number of slots.
 func _test_live_hearts() -> void:
 	var hud := _main.get_node_or_null("HealthUI")
 	if not _ok(hud != null, "Main has no HealthUI node"):
@@ -254,35 +254,36 @@ func _test_live_hearts() -> void:
 		_ok(int(inv.layer) == 10,
 			"InventoryUI is on canvas layer %d, expected 10" % int(inv.layer))
 
-	var row := hud.get_node_or_null("Margin/Row")
-	if not _ok(row != null, "HealthUI has no Margin/Row"):
+	var fills: Array[ColorRect] = []
+	var stack: Array[Node] = [hud]
+	while stack.size() > 0:
+		var node: Node = stack.pop_back()
+		for child in node.get_children():
+			if child is ColorRect:
+				fills.append(child)
+			else:
+				stack.append(child)
+	if not _ok(fills.size() == 5, "bar has %d slot fills, expected 5" % fills.size()):
 		return
-	var full := load("res://Assets/UI/pixel_ui/icons/heart.png")
-	var half := load("res://Assets/UI/pixel_ui/icons/heart_half.png")
-	var empty := load("res://Assets/UI/pixel_ui/icons/heart_empty.png")
 
 	for case in [{"hp": 10, "want": 5}, {"hp": 7, "want": 4}, {"hp": 1, "want": 1},
 			{"hp": 0, "want": 0}]:
 		_player._iframe_left = 0.0
 		_player.health = int(case["hp"])
 		_player.health_changed.emit(_player.health, _player.max_health)
-		var want_shown: int = int(case["want"])
-		var want_half_at: int = want_shown - 1 if int(case["hp"]) % 2 != 0 \
-			and int(case["hp"]) > 0 else -1
-		var got := ""
-		for i in row.get_child_count():
-			var icon := row.get_child(i) as TextureRect
-			if icon == null:
-				continue
-			if i < want_shown:
-				got += "F" if (i == want_half_at and icon.texture == half) \
-					else ("H" if icon.texture == half else "f")
-			else:
-				got += "e" if icon.texture == empty else "?"
-		_ok(row.get_child_count() == 5,
-			"at %d hp the row has %d hearts, expected a fixed 5"
-			% [int(case["hp"]), row.get_child_count()])
-		print("live hearts    : %2d hp -> '%s'" % [int(case["hp"]), got])
+		var lit := 0
+		var total := 0.0
+		for f in fills:
+			if f.visible and f.size.x > 0.5:
+				lit += 1
+				total += f.size.x / float(hud._slot_base_w)
+		_ok(lit == int(case["want"]),
+			"at %d hp the bar lights %d slots, expected %d"
+			% [int(case["hp"]), lit, int(case["want"])])
+		_ok(absf(total - float(case["hp"]) / 2.0) < 0.05,
+			"at %d hp total fill is %.2f, expected %.2f"
+			% [int(case["hp"]), total, float(case["hp"]) / 2.0])
+		print("live bar       : %2d hp -> %d slot(s) lit" % [int(case["hp"]), lit])
 
 
 ## Kills the real player, away from the spawn, with a known coin count.
@@ -506,42 +507,28 @@ func _first_trap() -> Node2D:
 	for child in hazards.get_children():
 		return child as Node2D
 	return null
-## The heart strip must show the right icon for each half-heart value.
-##
-## Two separate numbers, and conflating them is the bug this test was written to
-## catch: the heart COUNT comes from max_health and is always 5, while the number
-## of FILLED hearts follows current health. At 0 health the row must still show
-## five EMPTY hearts - never an empty row, which is what you get if you derive
-## the count from current health instead.
+## The segmented bar keeps a fixed five slots; only the fill fraction of each
+## slot follows health. At 0 hp all five slots stay drawn, just empty.
 func _test_hearts() -> void:
 	var cases := [
-		{"hp": 10, "shown": 5, "full": 5, "half": 0, "label": "five full"},
-		{"hp": 7, "shown": 4, "full": 3, "half": 1, "label": "3 full + 1 half"},
-		{"hp": 1, "shown": 1, "full": 0, "half": 1, "label": "1 half, 4 empty"},
-		{"hp": 0, "shown": 0, "full": 0, "half": 0, "label": "five empty"},
+		{"hp": 10, "lit": 5, "label": "five full"},
+		{"hp": 7, "lit": 4, "label": "3 full + 1 half"},
+		{"hp": 1, "lit": 1, "label": "1 half, 4 empty"},
+		{"hp": 0, "lit": 0, "label": "five empty"},
 	]
+	var per := 10.0 / 5.0
 	for c in cases:
 		var hp: int = c["hp"]
-		var want_shown: int = c["shown"]
-		var want_full: int = c["full"]
-		var want_half: int = c["half"]
-		# The count is fixed by max_health and does NOT shrink with health.
-		var count: int = int(ceil(10.0 / 2.0))
-		# `shown` is how many hearts are drawn non-empty. It is ceil(hp/2),
-		# because an ODD number of half-hearts still lights its last heart - at
-		# 7hp that is 3 full plus 1 half, i.e. four lit hearts, not three.
-		var shown: int = int(ceil(float(hp) / 2.0))
-		var full: int = int(floor(float(hp) / 2.0))
-		var halves: int = hp % 2
-		_ok(count == 5, "heart count is %d, expected a fixed 5" % count)
-		_ok(shown == want_shown,
-			"health %d lights %d hearts, expected %d" % [hp, shown, want_shown])
-		_ok(full == want_full,
-			"health %d draws %d FULL hearts, expected %d" % [hp, full, want_full])
-		_ok(halves == want_half,
-			"health %d draws %d half heart(s), expected %d"
-			% [hp, halves, want_half])
-		print("hearts @ %2d hp : %d drawn, %d lit (%d full + %d half)   %s"
-			% [hp, count, shown, full, halves, c["label"]])
-	print("hearts         : 5 always drawn from max_health; 7hp lights 4 "
-		+ "(3 full + 1 half)")
+		var lit := 0
+		var total := 0.0
+		for i in 5:
+			var fill := clampf((float(hp) - i * per) / per, 0.0, 1.0)
+			if fill > 0.001:
+				lit += 1
+			total += fill
+		_ok(lit == int(c["lit"]),
+			"health %d lights %d slots, expected %d" % [hp, lit, int(c["lit"])])
+		_ok(absf(total * per - float(hp)) < 0.001,
+			"health %d fills %.2f slots-worth, expected %d" % [hp, total, hp])
+		print("bar @ %2d hp    : %d slot(s) lit   %s" % [hp, lit, c["label"]])
+	print("bar            : 5 always drawn from max_health; 7hp fills 3.5 slots")

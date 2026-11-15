@@ -7,7 +7,7 @@ extends SceneTree
 ## 0 upwards, so it never looks NORTH of a cell, and that is where the misses
 ## come from.
 
-const BUILDER := preload("res://dungeon_builder.gd")
+const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
 
 var _builder: Node2D
 var _grid: Array
@@ -16,7 +16,7 @@ var _frames := 0
 
 
 func _initialize() -> void:
-	_builder = load("res://dungeon.tscn").instantiate()
+	_builder = load("res://scenes/dungeon.tscn").instantiate()
 
 
 func _process(_delta: float) -> bool:

@@ -4,9 +4,9 @@
 ##
 ##   godot --headless --path . --script res://tools/test_mimic.gd
 
-const DB := preload("res://monster_db.gd")
-const MIMIC_SCRIPT := preload("res://mimic.gd")
-const ENEMY_SCENE := preload("res://enemy.tscn")
+const DB := preload("res://scripts/enemies/monster_db.gd")
+const MIMIC_SCRIPT := preload("res://scripts/enemies/mimic.gd")
+const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const ANCHOR_TOL := 1.0
 const EPS := 0.001
 ## Step past each phase boundary rather than landing on it. 1/60 does not
@@ -30,7 +30,7 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	match _stage:
 		0:
-			_main = load("res://Main.tscn").instantiate()
+			_main = load("res://scenes/Main.tscn").instantiate()
 			root.add_child(_main)
 			_frames = 8
 			_stage = 1
@@ -560,7 +560,7 @@ func _check_h_burst_push() -> void:
 
 
 func _count_coins() -> int:
-	var script := preload("res://coin.gd")
+	var script := preload("res://scripts/items/coin.gd")
 	var n := 0
 	var stack: Array = _main.get_children()
 	while not stack.is_empty():

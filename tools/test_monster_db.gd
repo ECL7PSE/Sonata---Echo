@@ -7,7 +7,7 @@ extends SceneTree
 ## quietly going wrong: a renamed asset, a re-exported sheet with different
 ## frame counts, or an offset that no longer pins the sprite to the ground.
 
-const DB := preload("res://monster_db.gd")
+const DB := preload("res://scripts/enemies/monster_db.gd")
 ## Key string -> the monster's dictionary. GDScript cannot look up a const by
 ## name at runtime, so the mapping is spelled out once here.
 const DATA := {

@@ -4,9 +4,9 @@ extends SceneTree
 ##
 ##   godot --headless --path . --script res://tools/test_enemy_core.gd
 
-const DB := preload("res://monster_db.gd")
-const ENEMY_SCENE := preload("res://enemy.tscn")
-const ENEMY_SCRIPT := preload("res://enemy.gd")
+const DB := preload("res://scripts/enemies/monster_db.gd")
+const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
+const ENEMY_SCRIPT := preload("res://scripts/enemies/enemy.gd")
 
 const DATA := {
 	"RAT": DB.RAT, "SLIME": DB.SLIME, "BAT": DB.BAT, "MUSHROOM": DB.MUSHROOM,
@@ -30,7 +30,7 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	match _stage:
 		0:
-			_main = load("res://Main.tscn").instantiate()
+			_main = load("res://scenes/Main.tscn").instantiate()
 			root.add_child(_main)
 			_frames = 10
 			_stage = 1
@@ -490,7 +490,7 @@ func _dungeon_enemies() -> Array:
 
 ## Counts every coin anywhere under Main, whatever dropped it.
 func _count_coins_deep() -> int:
-	var script := preload("res://coin.gd")
+	var script := preload("res://scripts/items/coin.gd")
 	var n := 0
 	var stack: Array = _main.get_children()
 	while not stack.is_empty():
@@ -527,7 +527,7 @@ func _index_of(key: String) -> int:
 ## count silently reads them as "no coins dropped". Shallow: chest coins land
 ## under Dungeon/Props, which is a grandchild of Main.
 func _count_coins() -> int:
-	var script := preload("res://coin.gd")
+	var script := preload("res://scripts/items/coin.gd")
 	var n := 0
 	for child in _main.get_children():
 		if child.get_script() == script:
@@ -542,6 +542,6 @@ func _count_coins() -> int:
 func _coin_names() -> String:
 	var out: Array[String] = []
 	for child in _main.get_children():
-		if child.get_script() == preload("res://coin.gd"):
+		if child.get_script() == preload("res://scripts/items/coin.gd"):
 			out.append(str(child.name))
 	return ",".join(out)
