@@ -1,16 +1,37 @@
 extends CanvasLayer
 ## Title screen, built entirely in code.
 ##
-## The gothic chrome (plates, frame, flourishes, cog) is drawn by gothic_ui.gd -
-## nothing here is sliced from a sprite sheet, so the menu is crisp at any size.
+## Uses the hand-made Canva artwork (corner flourish, skull, "Echo" title) from
+## res://Assets/UI/start_screen/. Buttons, subtitle and overlays are still built
+## in code through gothic_ui.gd.
 
 const MAIN_SCENE := "res://scenes/Main.tscn"
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
 
-const MENU_W := 240.0
-const MENU_H := 46.0
-const MENU_SEP := 12
-const BANNER_BG := Color("#171226")
+const ART_DIR := "res://Assets/UI/start_screen/"
+
+## On-screen width of each image in game pixels (1152x648 space). Height
+## follows the image's own aspect ratio, so this works whatever size the PNGs
+## were exported at. Taken from the Canva design (1920 wide) x 0.6.
+const SKULL_W := 179.0
+const TITLE_W := 275.0
+const CORNER_W := 80.0
+
+# --- colours taken from the Canva design
+const BG_COLOR := Color("#131a2c")
+const MAROON := Color("#652545")
+const FRAME_COLOR := MAROON
+const BTN_FILL := MAROON
+const BTN_FILL_HOVER := Color("#7d2f58")
+const TEAL := Color("#4fead1")
+
+const MENU_W := 222.0
+const MENU_H := 54.0
+const MENU_SEP := 10
+const BUTTON_FONT_SIZE := 20
+
+# Distance of the corner flourishes from the screen edges.
+const CORNER_INSET := Vector2(118.0, 58.0)
 
 const HELP_TEXT := "MOVE  WASD / Arrows      ATTACK  K / Space      FULLSCREEN  F11\n\nIN A DUEL\nF  ATTACK note      G  REST note      H  FEINT note\n\nPress the lane's key on the beat. Never press\non a feint - it is bait. Break its guard."
 
@@ -33,50 +54,45 @@ func _build_menu() -> void:
 	add_child(root)
 
 	var bg := ColorRect.new()
-	bg.color = GothUI.NAVY
+	bg.color = BG_COLOR
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 
 	var reveal: Array[Control] = []
 
-	# A hairline frame around the whole screen. Cheap, and it makes the screen
-	# read as an arranged composition rather than text floating in the dark.
-	root.add_child(GothUI.inner_line(12.0, Color(0.44, 0.08, 0.14, 0.38), 2, 1))
+	# Maroon frame line around the screen (left/right 100, top 42, bottom 36).
+	var frame := Panel.new()
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.offset_left = 100.0
+	frame.offset_right = -100.0
+	frame.offset_top = 42.0
+	frame.offset_bottom = -36.0
+	var frame_style := StyleBoxFlat.new()
+	frame_style.draw_center = false
+	frame_style.border_color = FRAME_COLOR
+	frame_style.set_border_width_all(2)
+	frame_style.anti_aliasing = false
+	frame.add_theme_stylebox_override("panel", frame_style)
+	root.add_child(frame)
 
-	# The title sits on its own banner plate, so the words never have to fight
-	# ornament for legibility.
-	var banner := Panel.new()
-	banner.anchor_left = 0.5
-	banner.anchor_right = 0.5
-	banner.anchor_top = 0.0
-	banner.anchor_bottom = 0.0
-	banner.offset_left = -240
-	banner.offset_right = 240
-	banner.offset_top = 72
-	banner.offset_bottom = 196
-	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	GothUI.dress(banner, 8, BANNER_BG)
-	root.add_child(banner)
-	reveal.append(banner)
+	# Corner flourishes: one image, mirrored for the other three corners.
+	var corner_tex := _crop(load(ART_DIR + "corner.png") as Texture2D)
+	for c in [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]:
+		var corner := _corner(corner_tex, c[0], c[1])
+		root.add_child(corner)
+		reveal.append(corner)
 
-	var title := GothUI.label("ECHO", 48, GothUI.CYAN)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title.anchor_right = 1.0
-	title.offset_top = 80
-	title.offset_bottom = 144
+	# Skull with music notes, sitting on the top edge of the frame.
+	var skull := _centered_tex(ART_DIR + "skull.png", 5.0, SKULL_W)
+	root.add_child(skull)
+	reveal.append(skull)
+
+	# "Echo" title image.
+	var title := _centered_tex(ART_DIR + "title.png", 84.0, TITLE_W)
 	root.add_child(title)
 	reveal.append(title)
-
-	var subtitle := GothUI.label("LOST WORLDS", 24, GothUI.DIM)
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	subtitle.anchor_right = 1.0
-	subtitle.offset_top = 148
-	subtitle.offset_bottom = 176
-	root.add_child(subtitle)
-	reveal.append(subtitle)
 
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -84,22 +100,100 @@ func _build_menu() -> void:
 	box.anchor_right = 0.5
 	box.offset_left = -MENU_W * 0.5
 	box.offset_right = MENU_W * 0.5
-	box.offset_top = 236
-	box.offset_bottom = 572
+	box.offset_top = 257
+	box.offset_bottom = 570
 	box.add_theme_constant_override("separation", MENU_SEP)
 	root.add_child(box)
 
-	_add_button(box, "CONTINUE", "continue", reveal)
-	_add_button(box, "NEW GAME", "new", reveal)
-	_add_button(box, "CONTROLS", "how", reveal)
-	_add_button(box, "RESTART", "restart", reveal)
-	_add_button(box, "EXIT", "exit", reveal)
+	_add_button(box, "continue", "continue", reveal)
+	_add_button(box, "new game", "new", reveal)
+	_add_button(box, "controls", "how", reveal)
+	_add_button(box, "restart", "restart", reveal)
+	_add_button(box, "exit", "exit", reveal)
 
 	_add_gear(root, reveal)
 	_build_help(root)
 	_build_settings(root)
 	_stagger(reveal)
 	call_deferred("_focus_first")
+
+
+## A corner flourish. (ax, ay) is 0 or 1 for left/right and top/bottom; the
+## image is flipped to suit, so only the top-left artwork is needed.
+func _corner(tex: Texture2D, ax: float, ay: float) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = tex
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_SCALE
+	t.flip_h = ax == 1.0
+	t.flip_v = ay == 1.0
+	var s := _fit(tex, CORNER_W)
+	t.anchor_left = ax
+	t.anchor_right = ax
+	t.anchor_top = ay
+	t.anchor_bottom = ay
+	t.offset_left = CORNER_INSET.x if ax == 0.0 else -CORNER_INSET.x - s.x
+	t.offset_right = t.offset_left + s.x
+	t.offset_top = CORNER_INSET.y if ay == 0.0 else -CORNER_INSET.y - s.y
+	t.offset_bottom = t.offset_top + s.y
+	return t
+
+
+## An image centred horizontally, `top` pixels from the top of the screen.
+## Trims transparent padding off a PNG (Canva exports often keep a big empty
+## margin), so the width constants above refer to the visible artwork only.
+func _crop(tex: Texture2D) -> Texture2D:
+	var img := tex.get_image()
+	if img == null:
+		return tex
+	var used := img.get_used_rect()
+	if used.size.x <= 0 or used.size.y <= 0:
+		return tex
+	var atlas := AtlasTexture.new()
+	atlas.atlas = tex
+	atlas.region = Rect2(used)
+	return atlas
+
+
+func _fit(tex: Texture2D, width: float) -> Vector2:
+	return Vector2(width, width * tex.get_height() / tex.get_width())
+
+
+func _centered_tex(path: String, top: float, width: float) -> TextureRect:
+	var tex := _crop(load(path) as Texture2D)
+	var t := TextureRect.new()
+	t.texture = tex
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_SCALE
+	var s := _fit(tex, width)
+	t.anchor_left = 0.5
+	t.anchor_right = 0.5
+	t.offset_left = -s.x * 0.5
+	t.offset_right = s.x * 0.5
+	t.offset_top = top
+	t.offset_bottom = top + s.y
+	return t
+
+
+## Restyles a menu button to match the Canva design (maroon plate, black
+## outline, teal text). Only affects the start screen, not other menus.
+func _skin_button(b: Button) -> void:
+	for state in ["normal", "hover", "pressed"]:
+		var s := StyleBoxFlat.new()
+		s.bg_color = BTN_FILL_HOVER if state == "hover" else BTN_FILL
+		s.border_color = Color.BLACK
+		s.set_border_width_all(3)
+		s.set_corner_radius_all(8)
+		s.anti_aliasing = false
+		b.add_theme_stylebox_override(state, s)
+	b.add_theme_color_override("font_color", TEAL)
+	b.add_theme_color_override("font_hover_color", Color.WHITE)
+	b.add_theme_color_override("font_pressed_color", Color.WHITE)
+	b.add_theme_color_override("font_focus_color", TEAL)
 
 
 ## Fades the title block in, then the rows, for a calm entrance.
@@ -115,7 +209,8 @@ func _stagger(nodes: Array[Control]) -> void:
 
 func _add_button(box: VBoxContainer, text: String, action: String,
 		reveal: Array[Control]) -> void:
-	var b := GothUI.make_button(text, Vector2(MENU_W, MENU_H), 16)
+	var b := GothUI.make_button(text, Vector2(MENU_W, MENU_H), BUTTON_FONT_SIZE)
+	_skin_button(b)
 	b.pressed.connect(_on_menu.bind(action))
 	box.add_child(b)
 	_buttons.append(b)
@@ -124,6 +219,15 @@ func _add_button(box: VBoxContainer, text: String, action: String,
 
 func _add_gear(root: Control, reveal: Array[Control]) -> void:
 	var gear := GothUI.gear_button(46.0)
+	# Drop the maroon plate/outline so only the gear icon shows.
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var flat := StyleBoxFlat.new()
+		flat.draw_center = false
+		flat.set_border_width_all(0)
+		gear.add_theme_stylebox_override(state, flat)
+	for c in gear.get_children():
+		if c is Panel:  # the bevel hairlines make_button adds
+			c.queue_free()
 	gear.anchor_left = 1.0
 	gear.anchor_right = 1.0
 	gear.offset_left = -66
