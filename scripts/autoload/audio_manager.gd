@@ -66,7 +66,6 @@ var SOUNDS: Dictionary = {
 	"coin_collect": ["res://audio/driken5482-retro-coin-4-236671.mp3"],
 	"vase_break": ["res://audio/freesound_community-breaking-a-vase-remix-87091.mp3"],
 	"crate_break": ["res://audio/freesound_community-wood-crate-destory-2-97263.mp3"],
-	"door_open": ["res://audio/sfx/dragon-studio-door-opening-454242.mp3"],
 	"ui_hover": ["res://audio/sfx/litupsubway-ui-hover-sfx-513360.mp3"],
 	"ui_click": ["res://audio/sfx/dragon-studio-button-press-382713.mp3"],
 	# ONE file only, so the never-repeat rule is skipped for it; the random

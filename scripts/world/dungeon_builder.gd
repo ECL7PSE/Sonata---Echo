@@ -46,7 +46,6 @@ const SHEET_T002 := SHEET_DIR + "Tile/T002.png"
 const PROP_SCRIPT := preload("res://scripts/world/prop_breakable.gd")
 const LOOT_SCRIPT := preload("res://scripts/items/loot.gd")
 const TORCH_SCRIPT := preload("res://scripts/world/torch.gd")
-const DOOR_SCRIPT := preload("res://scripts/world/dungeon_door.gd")
 const TRAP_SCRIPT := preload("res://scripts/world/trap.gd")
 const SPAWNER := preload("res://scripts/enemies/enemy_spawner.gd")
 
@@ -291,29 +290,6 @@ const CORRIDORS := [
 	Rect2i(28, 36, 4, 3),   # eye_well -> goblin_den
 	Rect2i(18, 36, 4, 3),   # goblin_den -> mimic_den
 	Rect2i(8, 36, 3, 3),    # mimic_den -> bone_hall
-]
-
-## Required room -> next room. corridor_index refers to CORRIDORS so door
-## placement cannot drift from the generated passage.
-## Orientation is the corresponding row of the supplied 8-direction sprite sheet.
-## The start hall opens into the rat vault; clearing it unlocks the slimes.
-const DOOR_LINKS := [
-	{"corridor_index": 3, "required_room": "",
-		"target_room": "vault", "orientation": 2},
-	{"corridor_index": 2, "required_room": "vault",
-		"target_room": "cistern", "orientation": 0},
-	{"corridor_index": 0, "required_room": "cistern",
-		"target_room": "crypt", "orientation": 2},
-	{"corridor_index": 1, "required_room": "crypt",
-		"target_room": "forge", "orientation": 2},
-	{"corridor_index": 4, "required_room": "forge",
-		"target_room": "eye_well", "orientation": 4},
-	{"corridor_index": 5, "required_room": "eye_well",
-		"target_room": "goblin_den", "orientation": 6},
-	{"corridor_index": 6, "required_room": "goblin_den",
-		"target_room": "mimic_den", "orientation": 6},
-	{"corridor_index": 7, "required_room": "mimic_den",
-		"target_room": "bone_hall", "orientation": 6},
 ]
 
 ## Two lights for the south shaft, at the WALL EDGE and alternating sides.
@@ -570,12 +546,6 @@ func _ready() -> void:
 	_place_props(layers["props"], _grid)
 	_place_player_start()
 	_place_enemy_spawns()
-	var doors: Array = []
-	var room_manager := get_node_or_null("/root/RoomManager")
-	if room_manager == null:
-		push_error("Dungeon could not find the RoomManager autoload.")
-		return
-	room_manager.call("configure_progression", doors, self)
 
 # --- Grid ------------------------------------------------------------------
 
@@ -594,96 +564,6 @@ func _build_grid() -> Array:
 	for rect in CORRIDORS:
 		_carve(grid, rect)
 	return grid
-
-
-## Fill cells on both sides of the door opening with WALL cells.
-## Doorway cells stay floor; side pieces get proper brick caps etc.
-func _apply_door_walls(grid: Array) -> void:
-	var doorway_cells: Array = []
-	for link in DOOR_LINKS:
-		var plan := _door_plan(link)
-		var target_room: String = link["target_room"]
-		if plan.is_empty():
-			push_error("Door corridor does not meet the target room opening: " + target_room)
-			continue
-
-		var wall_line: Vector2i = plan["wall_line"]
-		var span_start: int = plan["span_start"]
-		var span_end: int = plan["span_end"]
-		var opening_start: int = plan["opening_start"]
-		var opening_width: int = plan["opening_width"]
-		var horizontal: bool = plan["horizontal"]
-		for axis in range(span_start, span_end):
-			var cell := Vector2i(wall_line.x, axis) if horizontal else Vector2i(axis, wall_line.y)
-			if axis >= opening_start and axis < opening_start + opening_width:
-				if not _walkable(grid, cell):
-					push_error("Doorway cell is not floor for %s: %s" % [target_room, cell])
-					continue
-				var cell_ix := int(cell.x)
-				var cell_iy := int(cell.y)
-				doorway_cells.append(Vector2i(cell_ix, cell_iy))
-			else:
-				var ax := int(cell.x)
-				var ay := int(cell.y)
-				grid[ay][ax] = 0
-
-
-func _door_plan(link: Dictionary) -> Dictionary:
-	var corridor: Rect2i = CORRIDORS[int(link["corridor_index"])]
-	var horizontal := corridor.size.x >= corridor.size.y
-	var target_rect: Rect2i = ROOMS[str(link["target_room"])]
-	var door_cell := Vector2(corridor.position) + Vector2(corridor.size) * 0.5
-	var wall_line := Vector2i.ZERO
-	var span_start := 0
-	var span_end := 0
-	if horizontal:
-		if target_rect.position.x >= corridor.end.x:
-			door_cell.x = corridor.end.x - 0.5
-			wall_line.x = target_rect.position.x
-			span_start = target_rect.position.y
-			span_end = target_rect.end.y
-		elif target_rect.end.x <= corridor.position.x:
-			door_cell.x = corridor.position.x + 0.5
-			wall_line.x = corridor.position.x
-			span_start = target_rect.position.y
-			span_end = target_rect.end.y
-		else:
-			return {}
-	else:
-		if target_rect.position.y >= corridor.end.y:
-			door_cell.y = corridor.end.y - 0.5
-			wall_line.y = target_rect.position.y
-			span_start = target_rect.position.x
-			span_end = target_rect.end.x
-		elif target_rect.end.y <= corridor.position.y:
-			door_cell.y = corridor.position.y + 0.5
-			wall_line.y = corridor.position.y
-			span_start = target_rect.position.x
-			span_end = target_rect.end.y
-		else:
-			return {}
-
-	var opening_width := DOOR_SCRIPT.opening_width_cells(
-			int(link["orientation"]), GRID, horizontal)
-	var cross_center := door_cell.y if horizontal else door_cell.x
-	var opening_start := floori(cross_center - float(opening_width) * 0.5)
-	if opening_start < span_start or opening_start + opening_width > span_end:
-		return {}
-
-	# Center even-width openings between cells rather than on a tile center.
-	if horizontal:
-		door_cell.y = float(opening_start) + float(opening_width) * 0.5
-	else:
-		door_cell.x = float(opening_start) + float(opening_width) * 0.5
-	return {
-		"horizontal": horizontal,
-		"door_cell": door_cell,
-		"wall_line": wall_line,
-		"span_start": span_start,
-		"span_end": span_end,
-		"opening_start": opening_start,
-		"opening_width": opening_width,
-	}
 
 
 func _carve(grid: Array, rect: Rect2i) -> void:
