@@ -42,6 +42,7 @@ var _fullscreen_btn: Button
 
 
 func _ready() -> void:
+	Audio.play_title_music()
 	for child in get_children():
 		child.free()
 	_build_menu()
@@ -269,7 +270,9 @@ func _on_menu(action: String) -> void:
 
 
 func _start_game() -> void:
-	get_tree().change_scene_to_file(MAIN_SCENE)
+	var transition: Node = get_node("/root/SceneTransition")
+	await transition.call("change_scene", MAIN_SCENE,
+			Callable(Audio, "play_dungeon_music"))
 
 
 # ---------------------------------------------------------------- overlays

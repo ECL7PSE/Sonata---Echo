@@ -164,10 +164,11 @@ func _ready() -> void:
 	# Enemy_<room>_<x>_<y> (or Mimic_<room>_<suffix>). The room name is what
 	# RoomManager keys on, so derive it once here rather than re-parsing names
 	# everywhere.
-	if name.begins_with("Enemy_"):
-		room_name = name.split("_")[1]
-	elif name.begins_with("Mimic_"):
-		room_name = name.split("_")[1]
+	if room_name.is_empty():
+		if name.begins_with("Enemy_"):
+			room_name = name.split("_")[1]
+		elif name.begins_with("Mimic_"):
+			room_name = name.split("_")[1]
 
 	if data.is_empty():
 		push_error("Enemy has no data; nothing to build")

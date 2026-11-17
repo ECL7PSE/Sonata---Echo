@@ -172,7 +172,8 @@ func close() -> void:
 
 func _quit_to_menu() -> void:
 	_close_quiet()
-	get_tree().change_scene_to_file("res://scenes/start_screen.tscn")
+	var transition: Node = get_node("/root/SceneTransition")
+	await transition.call("change_scene", "res://scenes/start_screen.tscn")
 
 
 func _close_quiet() -> void:

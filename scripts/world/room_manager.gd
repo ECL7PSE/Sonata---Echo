@@ -1,7 +1,7 @@
-class_name RoomManager
+class_name DungeonRoomManager
 extends Node
 
-## Runs the room-clear chest spawn + boss reset pillar.
+## Tracks room clears for progression doors and preserves run-reset helpers.
 ##
 ## The Dungeon builder already owns every chest (via dungeon_builder._make_chest),
 ## so this autoload mirrors that construction for the hidden rooms and the
@@ -13,33 +13,92 @@ const PROP_SCRIPT := preload("res://scripts/world/prop_breakable.gd")
 const Loot := preload("res://scripts/items/loot.gd")
 
 signal enemy_died(room_name: String)
+signal room_cleared(room_name: String)
 
-## Per-room state before the first enemy dies.
-## keys are room names, values are the mutable state dict.
+## Remaining enemy counts keyed by room name.
 var rooms: Dictionary = {}
+var _doors_by_room: Dictionary = {}
+var _registered_enemies: Dictionary = {}
+var _defeated_enemies: Dictionary = {}
 
-func _ready() -> void:
-	# Listen to the shared died signal on every enemy node, so a room is
-	# only counted once no matter how many enemies pile in.
-	var enemies := get_tree().get_nodes_in_group("enemies")
-	for enemy in enemies:
-		if enemy is Enemy:
-			enemy.died.connect(func(): _on_enemy_died(enemy.room_name))
 
-	# Keep the autoload valid for the whole play.
-	set("ghost", true)
-
-func _on_enemy_died(room_name: String) -> void:
-	# The builder names every enemy Enemy_<room>_<x>_<y> (boss gets _boss
-	# appended); mimics use Mimic_<room>_<suffix>. The manager parses the room
-	# off that name so it does not need to share state with the spawner.
-	if room_name == "":
+func configure_progression(doors: Array, dungeon_root: Node) -> void:
+	if dungeon_root == null or not is_instance_valid(dungeon_root):
+		push_error("RoomManager.configure_progression requires a valid dungeon root.")
 		return
+
+	rooms.clear()
+	_doors_by_room.clear()
+	_registered_enemies.clear()
+	_defeated_enemies.clear()
+
+	for door in doors:
+		if not is_instance_valid(door):
+			continue
+		if not door.has_method("open") or not door.has_method("set_open_initially"):
+			push_error("Room progression received a door without the required methods.")
+			continue
+		var required_room := str(door.get("required_room"))
+		if required_room.is_empty():
+			door.set_open_initially()
+			continue
+		if not _doors_by_room.has(required_room):
+			_doors_by_room[required_room] = []
+			rooms[required_room] = {
+				"enemy_count": 0,
+				"chest_spawned": false,
+				"chest": null,
+			}
+		_doors_by_room[required_room].append(door)
+
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		if not dungeon_root.is_ancestor_of(enemy) or not (enemy is Enemy):
+			continue
+		var room_name := str(enemy.room_name)
+		if not _doors_by_room.has(room_name):
+			continue
+		var enemy_id := enemy.get_instance_id()
+		if _registered_enemies.has(enemy_id):
+			continue
+		_registered_enemies[enemy_id] = room_name
+		if int(enemy.health) <= 0:
+			_defeated_enemies[enemy_id] = true
+			continue
+		var state: Dictionary = rooms[room_name]
+		state["enemy_count"] = int(state["enemy_count"]) + 1
+		rooms[room_name] = state
+		enemy.died.connect(
+				_on_enemy_died.bind(room_name, enemy_id), CONNECT_ONE_SHOT)
+
+	for room_name in _doors_by_room:
+		var state: Dictionary = rooms[room_name]
+		if int(state["enemy_count"]) == 0:
+			_open_doors_for_room(room_name, false)
+
+
+func _on_enemy_died(room_name: String, enemy_id: int) -> void:
+	if not _registered_enemies.has(enemy_id) or _defeated_enemies.has(enemy_id):
+		return
+	_defeated_enemies[enemy_id] = true
 	if not rooms.has(room_name):
-		rooms[room_name] = {"enemy_count": 0, "chest_spawned": false, "chest": null}
-	if rooms[room_name]["chest_spawned"]:
 		return
-	rooms[room_name]["enemy_count"] += 1
+	var state: Dictionary = rooms[room_name]
+	state["enemy_count"] = maxi(int(state["enemy_count"]) - 1, 0)
+	rooms[room_name] = state
+	enemy_died.emit(room_name)
+	if int(state["enemy_count"]) == 0:
+		room_cleared.emit(room_name)
+		_open_doors_for_room(room_name, true)
+
+
+func _open_doors_for_room(room_name: String, animate: bool) -> void:
+	for door in _doors_by_room.get(room_name, []):
+		if not is_instance_valid(door):
+			continue
+		if animate:
+			door.open()
+		else:
+			door.set_open_initially()
 
 func _spawn_chest(room_name: String, cell: Vector2i) -> void:
 	# Build a box + sprite + collision, mirroring dungeon_builder._make_chest,
@@ -103,15 +162,6 @@ func _box_shape(size_px: int) -> CollisionShape2D:
 	box.size = Vector2(size_px, size_px)
 	shape.shape = box
 	return shape
-
-func _register() -> void:
-	var root := get_tree().root
-	if root != null and not root.get_node_or_null("RoomManager"):
-		root.add_child(self)
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_ENTER_TREE:
-		_register()
 
 func reset_run() -> void:
 	# Use the existing, tested descent flow so the boss pillar never has to

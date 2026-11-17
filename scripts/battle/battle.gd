@@ -55,6 +55,8 @@ const SFX_POOL := 4
 enum P { OFF, DEMO, PLAYER, RESULT }
 
 var _active := false
+var _ending := false
+var last_result: StringName = &""
 var _root: Control
 var _enemy: Node
 var _player: Node2D
@@ -119,15 +121,35 @@ func is_active() -> bool:
 
 
 func start(enemy: Node, player: Node2D) -> void:
-	if _active or enemy == null or player == null:
+	if _active or _ending or enemy == null or player == null:
 		return
 	if DisplayServer.get_name() == "headless":
 		return
 	if not is_instance_valid(enemy) or not is_instance_valid(player):
 		return
+	var transition := get_node_or_null("/root/SceneTransition")
+	if transition == null:
+		push_error("Battle requires the SceneTransition autoload.")
+		return
+	if transition.is_transitioning():
+		return
+
 	_enemy = enemy
 	_player = player
 	_active = true
+	last_result = &""
+
+	var transitioned: bool = await transition.run_action(
+			Callable(self, "_prepare_battle"), true)
+	if not transitioned:
+		_active = false
+		_enemy = null
+		_player = null
+		return
+	_begin_round()
+
+
+func _prepare_battle() -> void:
 	_round = 0
 	_combo = 0
 	_clear_hold()
@@ -135,7 +157,7 @@ func start(enemy: Node, player: Node2D) -> void:
 	_total_misses = 0
 	_total_feints = 0
 	_refresh_combo()
-	_beat_sec = 60.0 / _bpm_for(enemy)
+	_beat_sec = 60.0 / _bpm_for(_enemy)
 	_penalty = maxi(1, int(_enemy.damage_amount() / 2.0))
 	_enemy_name.text = str(_enemy.get("species")).to_upper()
 	_hud = get_tree().current_scene.get_node_or_null("HealthUI")
@@ -148,15 +170,11 @@ func start(enemy: Node, player: Node2D) -> void:
 	_clear_duelists()
 	_build_duelists()
 	_root.visible = true
-	_root.modulate.a = 0.0
-	create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT) \
-		.tween_property(_root, "modulate:a", 1.0, 0.22)
-	get_tree().paused = true
+	_root.modulate.a = 1.0
 	if _enemy.has_signal("died"):
 		_enemy.died.connect(_on_enemy_died)
 	if _player.has_signal("died"):
 		_player.died.connect(_on_player_died)
-	_begin_round()
 
 
 func _bpm_for(enemy: Node) -> float:
@@ -653,7 +671,7 @@ func _phase_end() -> float:
 
 
 func _process(delta: float) -> void:
-	if not _active:
+	if not _active or _ending or _transition_running():
 		return
 	_phase_time += delta
 
@@ -762,6 +780,9 @@ func _layout_hold(i: int, n: Control) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _transition_running():
+		get_viewport().set_input_as_handled()
+		return
 	if not _active or _phase != P.PLAYER:
 		return
 	# Each lane has its own judgement key: F=attack, G=rest, H=feint. Space/Enter
@@ -965,7 +986,7 @@ func _finish_player() -> void:
 		_feedback.text = "HITS %d   MISS %d   FEINT %d" % [_hits, _misses, _feints]
 	_refresh_enemy_bar()
 	if int(_player.get("health")) <= 0:
-		_end()
+		_end(&"defeat")
 
 
 func _rank() -> String:
@@ -997,23 +1018,55 @@ func _take_player_hit() -> void:
 		_player.take_damage(_penalty, _enemy.global_position)
 
 
+func _transition_running() -> bool:
+	var transition := get_node_or_null("/root/SceneTransition")
+	return transition != null and bool(transition.call("is_transitioning"))
+
+
 # ---------------------------------------------------------------- teardown
 
 func _on_enemy_died() -> void:
-	_end()
+	_end(&"victory")
 
 
 func _on_player_died() -> void:
-	_end()
+	_end(&"defeat")
 
 
-func _end() -> void:
-	if not _active:
+func _end(result: StringName = &"") -> void:
+	if not _active or _ending:
 		return
+	if result == &"":
+		if is_instance_valid(_enemy) and int(_enemy.get("health")) <= 0:
+			result = &"victory"
+		elif is_instance_valid(_player) and int(_player.get("health")) <= 0:
+			result = &"defeat"
+		else:
+			result = &"aborted"
+	last_result = result
 	_active = false
+	_ending = true
+
+	var transition := get_node_or_null("/root/SceneTransition")
+	if transition == null:
+		push_error("Battle requires the SceneTransition autoload.")
+		_finish_battle_at_black()
+		get_tree().paused = false
+		_ending = false
+		return
+
+	var transitioned: bool = await transition.run_action(
+			Callable(self, "_finish_battle_at_black"), false)
+	if not transitioned:
+		push_error("Battle could not start its result transition.")
+		_finish_battle_at_black()
+		get_tree().paused = false
+	_ending = false
+
+
+func _finish_battle_at_black() -> void:
 	_phase = P.OFF
 	_root.visible = false
-	get_tree().paused = false
 	if _enemy != null and is_instance_valid(_enemy) and _enemy.has_signal("died") \
 			and _enemy.died.is_connected(_on_enemy_died):
 		_enemy.died.disconnect(_on_enemy_died)
@@ -1028,4 +1081,5 @@ func _end() -> void:
 		_hud = null
 	_stop_music()
 	_clear_notes()
+	Audio.play_dungeon_music()
 	finished.emit()

@@ -188,6 +188,7 @@ static func make_button(text: String, min_size := Vector2(240.0, 46.0),
 	# bottom, so the plate reads as a raised slab rather than a flat rectangle.
 	b.add_child(edge(3.0, 1, Color(1.0, 1.0, 1.0, 0.11), true))
 	b.add_child(edge(3.0, 1, Color(0.0, 0.0, 0.0, 0.42), false))
+	Audio.connect_ui_button(b)
 	return b
 
 

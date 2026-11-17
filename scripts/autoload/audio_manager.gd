@@ -35,11 +35,15 @@ const VARIATION_DB := 2.0
 
 ## A monster further than this is silent.
 const MAX_AUDIBLE_PX := 400.0
+const UI_BUTTON_SOUNDS_META := &"audio_manager_ui_sounds_connected"
 
-## Music. An MP3 loops with an audible click at the seam, but ffmpeg is not
-## installed on this machine, so the MP3 ships as-is with loop enabled.
-const MUSIC := "res://audio/Background Music.mp3"
-const MUSIC_FADE := 1.5
+## Separate music for the title screen and dungeon exploration.
+## Put these files in res://audio/Music/ with these exact names.
+const TITLE_MUSIC := "res://audio/Music/Crying Echos.wav"
+const DUNGEON_MUSIC := "res://audio/Music/Deep Resonance.wav"
+const MUSIC_FADE := 1.0
+const MUSIC_VOLUME_DB := -5.0
+const MUSIC_SILENCE_DB := -80.0
 
 ## The boss is a skeleton with the same clips, pitched down so it reads as bigger.
 const BOSS_PITCH := 0.8
@@ -55,7 +59,6 @@ func _footsteps() -> Array:
 
 ## event -> [files]. This is the map; nothing else lists audio filenames.
 var SOUNDS: Dictionary = {
-	"music": [MUSIC],
 	"player_slash": ["res://audio/Sword Slash.mp3"],
 	"footstep": _footsteps(),
 	"chest_open": ["res://audio/freesound_community-wood-chest-slid3-90317.mp3"],
@@ -63,6 +66,9 @@ var SOUNDS: Dictionary = {
 	"coin_collect": ["res://audio/driken5482-retro-coin-4-236671.mp3"],
 	"vase_break": ["res://audio/freesound_community-breaking-a-vase-remix-87091.mp3"],
 	"crate_break": ["res://audio/freesound_community-wood-crate-destory-2-97263.mp3"],
+	"door_open": ["res://audio/sfx/dragon-studio-door-opening-454242.mp3"],
+	"ui_hover": ["res://audio/sfx/litupsubway-ui-hover-sfx-513360.mp3"],
+	"ui_click": ["res://audio/sfx/dragon-studio-button-press-382713.mp3"],
 	# ONE file only, so the never-repeat rule is skipped for it; the random
 	# pitch is kept so repeated hits are not identical.
 	"player_hurt": ["res://audio/hurt_01.ogg"],
@@ -101,6 +107,8 @@ var ENEMY_SOUNDS: Dictionary = {
 var _players: Array[AudioStreamPlayer] = []
 var _positional: Array[AudioStreamPlayer2D] = []
 var _stream_cache: Dictionary = {}
+
+
 func _ready() -> void:
 	_rng.randomize()
 	_make_buses()
@@ -118,7 +126,26 @@ func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.bus = "Music"
 	add_child(_music)
-	start_music()
+
+
+func connect_ui_button(button: BaseButton) -> void:
+	if button.has_meta(UI_BUTTON_SOUNDS_META):
+		return
+	button.set_meta(UI_BUTTON_SOUNDS_META, true)
+	button.mouse_entered.connect(_on_ui_button_hover.bind(button))
+	button.pressed.connect(_on_ui_button_pressed.bind(button))
+
+
+func _on_ui_button_hover(button: BaseButton) -> void:
+	if button.disabled or not button.is_visible_in_tree():
+		return
+	play("ui_hover")
+
+
+func _on_ui_button_pressed(button: BaseButton) -> void:
+	if button.disabled or not button.is_visible_in_tree():
+		return
+	play("ui_click")
 
 
 ## Buses are made in code so there is no .tres to drift out of step with the
@@ -139,25 +166,81 @@ func _make_buses() -> void:
 		AudioServer.set_bus_send(music, "Master")
 
 
-## Background music, started on load and faded in. Nothing re-triggers it, so it
-## loops for the whole session and never restarts on death or respawn.
-func start_music() -> void:
-	if _music == null:
+## Start the title-screen soundtrack.
+func play_title_music() -> void:
+	play_music(TITLE_MUSIC)
+
+
+## Start the dungeon soundtrack when the player enters the game.
+func play_dungeon_music() -> void:
+	play_music(DUNGEON_MUSIC)
+
+
+## Switches the music stream and loops it. WAV, MP3, and OGG are supported.
+func play_music(path: String) -> void:
+	if _music == null or not is_instance_valid(_music):
 		return
-	var s := _stream_path(MUSIC)
-	if s == null:
+	if _music_path == path and (_music.playing or _music_switching):
 		return
-	# loop lives on the STREAM, not on the player: AudioStreamPlayer has no loop
-	# property, and assigning one is a runtime error. _stream_path turns looping
-	# off for every clip it hands out, so the music's is re-enabled here.
-	if s is AudioStreamMP3 or s is AudioStreamOggVorbis:
-		s.loop = true
-	_music.stream = s
-	_music.volume_db = -40.0
+
+	var stream := load(path) as AudioStream
+	if stream == null:
+		push_warning("Music file could not be loaded: " + path)
+		return
+
+	# Loop settings belong to the audio stream, not AudioStreamPlayer.
+	if stream is AudioStreamWAV:
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = 0
+		# Loop points are sample frames; zero creates an empty loop in imported WAVs.
+		stream.loop_end = roundi(stream.get_length() * stream.mix_rate)
+	elif stream is AudioStreamMP3 or stream is AudioStreamOggVorbis:
+		stream.loop = true
+
+	if _music_tween != null and _music_tween.is_running():
+		_music_tween.kill()
+
+	_music_path = path
+	if _music.playing:
+		_music_switching = true
+		_music_tween = create_tween()
+		_music_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		_music_tween.tween_property(_music, "volume_db", MUSIC_SILENCE_DB, MUSIC_FADE)
+		_music_tween.tween_callback(_switch_music.bind(stream, path))
+	else:
+		_switch_music(stream, path)
+
+
+func _switch_music(stream: AudioStream, path: String) -> void:
+	if _music == null or not is_instance_valid(_music) or _music_path != path:
+		return
+	_music.stop()
+	_music.stream = stream
+	_music.volume_db = MUSIC_SILENCE_DB
 	_music.play()
-	var tw := create_tween()
-	if tw != null:
-		tw.tween_property(_music, "volume_db", 0.0, MUSIC_FADE)
+	_music_switching = false
+
+	_music_tween = create_tween()
+	_music_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_music_tween.tween_property(_music, "volume_db", _music_volume_target(), MUSIC_FADE)
+
+
+func _music_volume_target() -> float:
+	return -40.0 if _music_ducked else MUSIC_VOLUME_DB
+
+
+## Lower the exploration music while a battle-specific track is playing.
+func duck_music(ducked: bool) -> void:
+	_music_ducked = ducked
+	if _music == null or not is_instance_valid(_music):
+		return
+	if _music_switching:
+		return
+	if _music_tween != null and _music_tween.is_running():
+		_music_tween.kill()
+	_music_tween = create_tween()
+	_music_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_music_tween.tween_property(_music, "volume_db", _music_volume_target(), 0.2)
 
 
 ## Plays a sound. An unknown event, or one whose files are all missing, is a
@@ -166,24 +249,20 @@ func start_music() -> void:
 ## `at` is a world position; null means non-positional. Everything the player
 ## causes passes null, which is what keeps their own footsteps centred.
 ## Silence the dungeon loop while a duel track plays over it.
-func duck_music(ducked: bool) -> void:
-	if _music == null or not is_instance_valid(_music):
-		return
-	_music.volume_db = -60.0 if ducked else 0.0
-
-
 func play(event: String, at: Variant = null) -> void:
 	if not SOUNDS.has(event):
 		return
 	var files: Array = SOUNDS[event]
-	if files.is_empty() or int(_live.get(event, 0)) >= SAME_EVENT_CAP:
+	var is_ui_event := event == "ui_hover" or event == "ui_click"
+	if files.is_empty() or (not is_ui_event
+			and int(_live.get(event, 0)) >= SAME_EVENT_CAP):
 		return
 	var s := _pick(files, event)
 	if s == null:
 		return
-	var pitch := _rng.randf_range(PITCH_MIN, PITCH_MAX)
+	var pitch := 1.0 if is_ui_event else _rng.randf_range(PITCH_MIN, PITCH_MAX)
 	var vol := 0.0
-	if VARIED.has(event):
+	if not is_ui_event and VARIED.has(event):
 		vol = _rng.randf_range(-VARIATION_DB, VARIATION_DB)
 	if at == null:
 		var p := _free_player()
@@ -202,7 +281,8 @@ func play(event: String, at: Variant = null) -> void:
 		p2.volume_db = vol
 		p2.global_position = at
 		p2.play()
-	_note(event)
+	if not is_ui_event:
+		_note(event)
 
 
 ## A species' attack / hurt / death / burst clip: positional, and only if the
@@ -271,9 +351,11 @@ func _stream_path(path: String) -> AudioStream:
 	if s == null:
 		push_warning("audio: could not load %s" % path)
 	else:
-		# Only the music loops, and it has its own player, so nothing on a
-		# pooled player may ever be left looping.
-		s.loop = false
+		# Pooled sound effects must never loop.
+		if s is AudioStreamWAV:
+			s.loop_mode = AudioStreamWAV.LOOP_DISABLED
+		elif s is AudioStreamMP3 or s is AudioStreamOggVorbis:
+			s.loop = false
 	_stream_cache[path] = s
 	return s
 
@@ -304,4 +386,8 @@ var _last_pick: Dictionary = {}
 ## event -> how many of its clips are sounding now, for the cap.
 var _live: Dictionary = {}
 var _music: AudioStreamPlayer
+var _music_tween: Tween
+var _music_path := ""
+var _music_switching := false
+var _music_ducked := false
 var _rng := RandomNumberGenerator.new()

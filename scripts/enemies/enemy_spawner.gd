@@ -346,6 +346,7 @@ static func make_mimic(cell_centre: Vector2, room_name: String,
 	e.species = "mimic"
 	e.position = cell_centre
 	e.home_position = cell_centre
+	e.room_name = room_name
 	e.name = "Mimic_%s_%s" % [room_name, suffix]
 	# Default material, like a real chest: a CanvasItemMaterial would opt the
 	# sprite out of the dungeon's PointLight2D lights and it would read as
@@ -369,6 +370,7 @@ static func make_enemy(key: String, cell_centre: Vector2, room_name: String,
 	e.species = key.to_lower()
 	e.position = cell_centre
 	e.home_position = cell_centre
+	e.room_name = room_name
 	e.boss = is_boss
 	e.player = player
 	e.name = "Enemy_%s_%d_%d" % [room_name,
