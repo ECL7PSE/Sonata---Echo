@@ -561,13 +561,34 @@ func _begin_round() -> void:
 	_enter_phase(P.DEMO)
 
 
+## Each species leans on one habit, so the same duel does not feel like the same
+## duel with a different portrait. `bonus` adds notes, `hold_every` sets how often
+## an attack becomes a long note (0 = never, 0 disables holds entirely), and
+## `rest_bias` shifts the roll towards the idle lane.
+const SPECIES_STYLE := {
+	"goblin": {"bonus": 1, "hold_every": 0, "rest_bias": 0.0},
+	"skeleton": {"bonus": 0, "hold_every": 2, "rest_bias": 0.0},
+	"flying_eye": {"bonus": 0, "hold_every": 4, "rest_bias": 0.14},
+	"bat": {"bonus": 0, "hold_every": 4, "rest_bias": 0.10},
+	"mushroom": {"bonus": -1, "hold_every": 2, "rest_bias": 0.06},
+	"slime": {"bonus": 0, "hold_every": 5, "rest_bias": 0.04},
+}
+
+
 func _make_pattern(r: int) -> Array:
-	var n := mini(4 + r, 9)
+	var style: Dictionary = {}
+	var key := ""
+	if _enemy != null and is_instance_valid(_enemy):
+		key = str(_enemy.get("species")).to_lower()
+	if SPECIES_STYLE.has(key):
+		style = SPECIES_STYLE[key]
+	var n := mini(4 + r + int(style.get("bonus", 0)), 9)
+	var rest_bias: float = float(style.get("rest_bias", 0.0))
 	var arr: Array = []
 	for i in n:
 		var t := ATTACK
 		var roll := randf()
-		if roll < 0.22:
+		if roll < 0.22 + rest_bias:
 			t = IDLE
 		elif roll < 0.40:
 			t = FEINT
@@ -582,12 +603,13 @@ func _make_pattern(r: int) -> Array:
 			arr[1]["type"] = ATTACK
 	# Roughly every third ATTACK note becomes a long note. Never the last note, so
 	# the tail always has a following beat to land against.
+	var every := int(style.get("hold_every", 3))
 	var seen := 0
 	for i in arr.size():
 		if int(arr[i]["type"]) != ATTACK:
 			continue
 		seen += 1
-		if seen % 3 == 1 and i < arr.size() - 1:
+		if every > 0 and seen % every == 1 and i < arr.size() - 1:
 			arr[i]["hold"] = 1.0
 	return arr
 
@@ -861,6 +883,7 @@ func _try_hit(lane: int, key: int = 0) -> void:
 	_combo += 1
 	if best_dt <= PERFECT:
 		_pop_feedback("PERFECT", CYAN)
+		_perfect_kick()
 		_play_sfx(SFX_PERFECT)
 	else:
 		_pop_feedback("GOOD", Color("#9fffc9"))
@@ -933,6 +956,19 @@ func _pop_feedback(text: String, color: Color) -> void:
 	var tw := create_tween()
 	tw.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_feedback, "scale", Vector2.ONE, 0.18)
+
+
+## A perfect hit shoves the whole overlay a hair and springs it back, which is
+## the cheapest way to make the beat feel like it landed.
+func _perfect_kick() -> void:
+	if _root == null or _root is not Control:
+		return
+	var view := _root as Control
+	view.pivot_offset = view.size * 0.5
+	view.scale = Vector2(1.014, 1.014)
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(view, "scale", Vector2.ONE, 0.11)
 
 
 func _flash_lane(t: int) -> void:

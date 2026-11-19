@@ -15,6 +15,11 @@ var max_health := 10
 var scene := "res://scenes/Main.tscn"
 var pos := Vector2.ZERO
 
+## Where the last death left the coins. Zero coins means no shade is owed.
+var shade_coins := 0
+var shade_scene := ""
+var shade_pos := Vector2.ZERO
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -32,10 +37,38 @@ var _hooked_player: Node = null
 func _process(_delta: float) -> void:
 	_ensure_map()
 	_ensure_tutorial()
+	_ensure_shade()
 	if _bench != null and is_instance_valid(_bench) and _hooked_player != null \
 			and is_instance_valid(_hooked_player) and _applied_scene != "":
 		return
 	_maybe_spawn_bench()
+
+
+var _shade: Node = null
+
+
+## The shade waits in the room you died in, so it is rebuilt with that floor.
+func _ensure_shade() -> void:
+	if _shade != null and is_instance_valid(_shade):
+		return
+	if shade_coins <= 0 or not is_inside_tree():
+		return
+	var cs := get_tree().current_scene
+	if cs == null or not (cs is Node2D) or cs.scene_file_path != shade_scene:
+		return
+	var s = load("res://scripts/world/shade.gd").new()
+	s.set("coins", shade_coins)
+	s.position = shade_pos
+	cs.add_child(s)
+	_shade = s
+
+
+## Called by the shade when it dies: the coins are the player's again.
+func take_shade() -> int:
+	var amount := shade_coins
+	shade_coins = 0
+	_shade = null
+	return amount
 
 
 ## The map overlay lives here so Tab works in every room without a HUD to own
@@ -144,6 +177,9 @@ func save_run(player: Node) -> void:
 	cfg.set_value("run", "echoes_equipped", GameState.echoes_equipped)
 	cfg.set_value("run", "explored", GameState.explored)
 	cfg.set_value("run", "tutorial_done", GameState.tutorial_done)
+	cfg.set_value("run", "shade_coins", shade_coins)
+	cfg.set_value("run", "shade_scene", shade_scene)
+	cfg.set_value("run", "shade_pos", shade_pos)
 	cfg.save(PATH)
 	has_run = true
 	saved.emit()
@@ -172,6 +208,9 @@ func load_save() -> void:
 	GameState.echoes_equipped = _strings(cfg.get_value("run", "echoes_equipped", []))
 	GameState.explored = _strings(cfg.get_value("run", "explored", []))
 	GameState.tutorial_done = bool(cfg.get_value("run", "tutorial_done", false))
+	shade_coins = int(cfg.get_value("run", "shade_coins", 0))
+	shade_scene = str(cfg.get_value("run", "shade_scene", ""))
+	shade_pos = cfg.get_value("run", "shade_pos", Vector2.ZERO)
 	GameState.echoes_changed.emit()
 
 
@@ -186,6 +225,9 @@ func _strings(value) -> Array[String]:
 
 func clear_save() -> void:
 	has_run = false
+	shade_coins = 0
+	shade_scene = ""
+	_shade = null
 	if FileAccess.file_exists(PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
 
@@ -202,16 +244,27 @@ func apply_to_player(player: Node) -> void:
 		player.emit_signal("health_changed", int(player.get("health")), int(player.get("max_health")))
 
 
-## Roguelike death: keep upgrades and echoes, lose the run's coins and the
-## checkpoint, and drop back to a fresh run. Dead Man's Toll keeps a quarter.
+## Roguelike death: keep upgrades and echoes, lose the checkpoint, and drop back
+## to a fresh run. The coins stay behind as a shade where you fell; Dead Man's
+## Toll keeps a quarter of them outright.
 func on_death() -> void:
 	var keep := 0
 	if GameState.echo_on("dead_mans_toll"):
 		keep = int(float(GameState.coins) * 0.25)
+	var owed := maxi(0, GameState.coins - keep)
+	var drop := pos
+	if _hooked_player != null and is_instance_valid(_hooked_player):
+		drop = _hooked_player.global_position
+	var where := ""
+	if is_inside_tree() and get_tree().current_scene != null:
+		where = get_tree().current_scene.scene_file_path
 	GameState.reset()
 	if keep > 0:
 		GameState.add_coins(keep)
 	clear_save()
+	shade_coins = owed
+	shade_pos = drop
+	shade_scene = where
 	_applied_scene = ""
 	_hooked_player = null
 	if is_inside_tree():
