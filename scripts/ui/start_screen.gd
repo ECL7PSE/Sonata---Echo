@@ -33,7 +33,7 @@ const BUTTON_FONT_SIZE := 20
 # Distance of the corner flourishes from the screen edges.
 const CORNER_INSET := Vector2(118.0, 58.0)
 
-const HELP_TEXT := "MOVE  WASD / Arrows      ATTACK  K / Space      FULLSCREEN  F11\n\nIN A DUEL\nF  ATTACK note      G  REST note      H  FEINT note\n\nPress the lane's key on the beat. Never press\non a feint - it is bait. Break its guard."
+const HELP_TEXT := "MOVE  WASD / Arrows      ATTACK  K / Space      FULLSCREEN  F11\n\nIN A DUEL\nF  left lane      G  middle lane      H  right lane\n\nWatch the enemy's section, then play it back:\npress each lane's key as its note crosses the line.\nEvery note lands and hurts the enemy. Build a combo."
 
 var _help: Control
 var _settings: Control

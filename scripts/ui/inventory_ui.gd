@@ -17,13 +17,7 @@ const COIN_ICON := preload("res://Assets/UI/pixel_ui/icons/coin.png")
 const HEARTS_ORIGIN := Vector2(12, 10)
 const HEART_SIZE := 16 * 3        # 16px source at 3x
 const HEART_COUNT := 5
-## Gap between the bottom of the hearts and the top of the coin row.
-const COIN_ROW_GAP := 8
-
-## --- coin row: one HBox, 8px separation, directly under the hearts
-const COIN_ROW_ORIGIN := Vector2(HEARTS_ORIGIN.x,
-		HEARTS_ORIGIN.y + HEART_SIZE * HEART_COUNT + COIN_ROW_GAP)
-const COIN_SEPARATION := 8
+const COIN_SEPARATION := 14
 ## 16x16 coin at 2x = 32px. It was previously drawn from the 80px G001 spin
 ## sheet, which rendered ~150px on screen and ran over everything.
 const COIN_SCALE := 2
@@ -33,14 +27,13 @@ var coin_icon: TextureRect
 var coin_count: Label
 
 
-## The coin row: a 16px icon at 2x with the count to its RIGHT, both in a Control
-## pinned under the hearts. Built here rather than authored in the scene so the
+## The coin row: a 16px icon at 2x with the count to its RIGHT, pinned in the
+## top-right corner of the screen. Built here rather than authored in the scene so the
 ## layout constants above are the single source of truth.
 func _build_coin_row() -> void:
 	var row := HBoxContainer.new()
 	row.name = "CoinRow"
 	row.add_theme_constant_override("separation", COIN_SEPARATION)
-	row.position = COIN_ROW_ORIGIN
 	row.z_index = 1
 	add_child(row)
 
@@ -51,10 +44,12 @@ func _build_coin_row() -> void:
 	coin_icon.custom_minimum_size = Vector2(
 			COIN_ICON.get_width() * COIN_SCALE,
 			COIN_ICON.get_height() * COIN_SCALE)
-	coin_icon.scale = Vector2.ONE * COIN_SCALE
-	# A TextureRect inside a container is laid out by its custom_minimum_size, so
-	# the visual scale is folded in rather than left to fight the container.
-	coin_icon.pivot_offset = Vector2.ZERO
+	# Drawn at the size the container allocates - stretching the texture instead
+	# of scaling the node, so it cannot overpaint the count beside it.
+	coin_icon.stretch_mode = TextureRect.STRETCH_SCALE
+	coin_icon.pivot_offset = Vector2(
+			COIN_ICON.get_width() * COIN_SCALE,
+			COIN_ICON.get_height() * COIN_SCALE) * 0.5
 	row.add_child(coin_icon)
 
 	coin_count = Label.new()
@@ -64,7 +59,19 @@ func _build_coin_row() -> void:
 	# Vertically centred on the coin rather than baseline-aligned to it.
 	coin_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	coin_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	coin_count.custom_minimum_size = Vector2(44, 0)
+	coin_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	row.add_child(coin_count)
+
+	# Pinned to the top-right corner, clear of the hearts on the left and of the
+	# duel's enemy bar below it.
+	var w := coin_icon.custom_minimum_size.x + COIN_SEPARATION + coin_count.custom_minimum_size.x
+	row.anchor_left = 1.0
+	row.anchor_right = 1.0
+	row.offset_right = -16
+	row.offset_left = -16 - w
+	row.offset_top = 12
+	row.offset_bottom = 12 + coin_icon.custom_minimum_size.y
 
 
 func _ready() -> void:
@@ -99,10 +106,8 @@ func _on_coins_changed(current: int) -> void:
 ## A short scale punch so a pickup reads as an event.
 func _pop() -> void:
 	var tween := coin_icon.create_tween()
-	tween.tween_property(coin_icon, "scale",
-		Vector2.ONE * COIN_SCALE * 1.25, 0.09)
-	tween.tween_property(coin_icon, "scale",
-		Vector2.ONE * COIN_SCALE, 0.11)
+	tween.tween_property(coin_icon, "scale", Vector2.ONE * 1.2, 0.09)
+	tween.tween_property(coin_icon, "scale", Vector2.ONE, 0.11)
 
 
 func _unused() -> void:

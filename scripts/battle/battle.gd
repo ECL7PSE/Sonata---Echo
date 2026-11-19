@@ -1,9 +1,8 @@
 extends CanvasLayer
 ## Rhythm duel: the enemy shows a short response section, then the player plays
-## it back on the beat. Attack notes must be hit, rests must be left alone, and
-## feints must NOT be touched. Accuracy chips the enemy's HP; mistakes cost the
-## player HP. The dungeon is paused while this overlay is open and resumes when
-## either side drops.
+## it back on the beat. Every lane is a note you hit on its key - each one lands
+## and chips the enemy's HP. Missing notes costs the player HP. The dungeon is
+## paused while this overlay is open and resumes when either side drops.
 ##
 ## Registered as the `Battle` autoload. Headless runs (the test suites) never
 ## build the UI and never start a duel, so game logic tests stay deterministic.
@@ -328,7 +327,7 @@ func _build_hud() -> void:
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
-	_howto = _label("F on the beat   -   leave REST alone   -   never touch FEINT", 15, Color("#a9a4b8"))
+	_howto = _label("F / G / H on the beat   -   every note lands", 15, Color("#a9a4b8"))
 	_howto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_howto.anchor_right = 1.0
 	_howto.offset_top = 372
@@ -856,53 +855,26 @@ func _try_hit(lane: int, key: int = 0) -> void:
 
 	_judged[best] = true
 	_phase_hits += 1
-	if lane == ATTACK:
-		var dmg := 1
-		_hits += 1
-		_total_hits += 1
-		_combo += 1
-		if best_dt <= PERFECT:
-			dmg = 2
-			_pop_feedback("PERFECT", CYAN)
-			_play_sfx(SFX_PERFECT)
-		else:
-			_pop_feedback("GOOD", Color("#9fffc9"))
-		_play_sfx(SFX_HIT[ATTACK])
-		_dmg_dealt += dmg
-		if _pattern[best].has("hold"):
-			# Long note: stay glued while the tail passes. The head is not burst yet.
-			_hold_note = best
-			_hold_key = key
-			_hold_dmg = dmg
-		else:
-			_burst(best, Color(0.5, 1.6, 0.7))
-		_lunge(_player_portrait, 1.0)
-	elif lane == IDLE:
-		# Rest notes are real notes: tap G on the beat. They just deal no damage.
-		_hits += 1
-		_total_hits += 1
-		_combo += 1
-		if best_dt <= PERFECT:
-			_pop_feedback("PERFECT", CYAN)
-			_play_sfx(SFX_PERFECT)
-		else:
-			_pop_feedback("GOOD", Color("#9fffc9"))
-		_play_sfx(SFX_HIT[IDLE])
-		_burst(best, Color(0.5, 1.6, 0.7))
-		_lunge(_player_portrait, 1.0)
+	# Every lane is a normal note now: press its key on the beat, it lands.
+	var dmg := 2 if best_dt <= PERFECT else 1
+	_hits += 1
+	_total_hits += 1
+	_combo += 1
+	if best_dt <= PERFECT:
+		_pop_feedback("PERFECT", CYAN)
+		_play_sfx(SFX_PERFECT)
 	else:
-		# Feint is a real note too: tap H on the beat, no damage dealt.
-		_hits += 1
-		_total_hits += 1
-		_combo += 1
-		if best_dt <= PERFECT:
-			_pop_feedback("PERFECT", CYAN)
-			_play_sfx(SFX_PERFECT)
-		else:
-			_pop_feedback("GOOD", Color("#cfc0ff"))
-		_play_sfx(SFX_HIT[FEINT])
+		_pop_feedback("GOOD", Color("#9fffc9"))
+	_play_sfx(SFX_HIT[lane])
+	_dmg_dealt += dmg
+	if _pattern[best].has("hold"):
+		# Long note: stay glued while the tail passes. The head is not burst yet.
+		_hold_note = best
+		_hold_key = key
+		_hold_dmg = dmg
+	else:
 		_burst(best, Color(0.5, 1.6, 0.7))
-		_lunge(_player_portrait, 1.0)
+	_lunge(_player_portrait, 1.0)
 	_refresh_combo()
 
 

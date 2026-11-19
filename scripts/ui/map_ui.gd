@@ -29,6 +29,11 @@ var _worn: Label
 var _coins: Label
 var _page := PAGE_MAP
 var _i_paused := false
+## Map fit: parchment pixels per dungeon cell, and where cell (0,0) landed.
+var _k := 1.0
+var _base := Vector2.ZERO
+var _origin := Vector2.ZERO
+var _world_scale := 1.0
 
 
 func _ready() -> void:
@@ -141,7 +146,7 @@ func _build_map_page() -> void:
 	# Parchment: the 43x43 grid at CELL px per cell, centred in the panel.
 	var board_size := Vector2(43, 43) * CELL
 	var parchment := ColorRect.new()
-	parchment.color = Color("#2b221a")
+	parchment.color = Color("#d9c8a3")
 	parchment.position = Vector2((600.0 - board_size.x) * 0.5, 74.0)
 	parchment.size = board_size
 	parchment.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -153,7 +158,7 @@ func _build_map_page() -> void:
 	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_page.add_child(_board)
 
-	_legend = GothUI.label("cyan = you    gold = bench    X = the way down", 12, GothUI.DIM)
+	_legend = GothUI.label("outline = unexplored    filled = explored    X = the way down", 12, GothUI.DIM)
 	_legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_legend.anchor_right = 1.0
 	_legend.offset_top = 528
@@ -214,6 +219,10 @@ func _refresh() -> void:
 
 
 ## Rebuilds the parchment from GameState.explored and the live player.
+##
+## Ink on paper: the whole dungeon is outlined, the rooms you have walked into
+## are filled and named, and it is scaled to fill the page instead of sitting in
+## one corner of a big empty sheet.
 func _refresh_map() -> void:
 	for c in _board.get_children():
 		c.queue_free()
@@ -227,54 +236,84 @@ func _refresh_map() -> void:
 	var explored: Array = state.get("explored") if state != null else []
 	var bell: bool = bool(state.call("echo_on", "grave_bell")) if state != null else false
 
-	# Dotted grid first, so the parchment reads as a map and not an empty box.
-	for gy in range(0, 44, 2):
-		for gx in range(0, 44, 2):
-			_rect(Rect2(Vector2(gx, gy) * CELL, Vector2(1.5, 1.5)), Color("#332a1f"))
+	# Fit the dungeon's footprint to the page.
+	var bounds := Rect2i()
+	var names: Array = rooms.keys()
+	for i in names.size():
+		var r: Rect2i = rooms[names[i]]
+		bounds = r if i == 0 else bounds.merge(r)
+	var pad := 22.0
+	var area := Vector2(43, 43) * CELL - Vector2(pad, pad) * 2.0
+	_k = minf(area.x / maxf(1.0, float(bounds.size.x)),
+		area.y / maxf(1.0, float(bounds.size.y)))
+	_base = Vector2(bounds.position)
+	_origin = Vector2(pad, pad) + (area - Vector2(bounds.size) * _k) * 0.5
+	_world_scale = float(builder.GRID) * float(builder.SCALE)
 
-	# Every room shows its footprint; only the ones you have walked into are inked.
-	for room_name in rooms:
+	const INK := Color("#2a2118")
+	const INK_SOFT := Color("#9a8763")
+	const ROOM_INK := Color("#cdb995")
+
+	# Hallways first, so the rooms ink over their ends.
+	for i in names.size():
+		for j in range(i + 1, names.size()):
+			_link(rooms[names[i]], rooms[names[j]], INK_SOFT)
+
+	for room_name in names:
 		var r: Rect2i = rooms[room_name]
-		var box := Rect2(Vector2(r.position) * CELL, Vector2(r.size) * CELL)
-		if not (room_name in explored):
-			_rect(box, Color("#241d16"))
+		var box := Rect2(_pt(r.position), Vector2(r.size) * _k)
+		var seen: bool = room_name in explored
+		if seen:
+			_rect(box, ROOM_INK)
+		_outline(box, INK if seen else INK_SOFT, 1.5 if seen else 1.0)
+		if not seen:
 			continue
-		_rect(box, Color("#15100b"))
-		_rect(box.grow(-1.5), Color("#6b563a"))
-		_rect(box.grow(-3.5), Color("#4a3b2a"))
-		if box.size.x >= 54.0 and box.size.y >= 26.0:
-			_label(room_name.replace("_", " "), box.grow(-4.0), Color("#c8b48a"), 9)
+		if box.size.x >= 90.0 and box.size.y >= 34.0:
+			_label(room_name.replace("_", " ").to_upper(), box.grow(-4.0), INK, 14)
 		if room_name == "bone_hall":
-			_label("X", Rect2(box.position, Vector2(box.size.x, 18.0)), GothUI.CRIMSON, 14)
+			_label("X", Rect2(box.position + Vector2(0, 1), Vector2(box.size.x, 16.0)),
+				GothUI.CRIMSON, 13)
 		if bell:
-			_label(str(_enemies_left(room_name)), Rect2(box.position + Vector2(0, box.size.y - 16.0),
-				Vector2(box.size.x, 16.0)), GothUI.TEXT, 11)
-
-	# Hallways between rooms you have seen.
-	var seen: Array = []
-	for room_name in rooms:
-		if room_name in explored:
-			seen.append(room_name)
-	for i in seen.size():
-		for j in range(i + 1, seen.size()):
-			_link(rooms[seen[i]], rooms[seen[j]])
+			_label(str(_enemies_left(room_name)),
+				Rect2(box.position + Vector2(0, box.size.y - 15.0), Vector2(box.size.x, 15.0)),
+				INK, 10)
 
 	var start: Variant = _player_start()
 	if start != null:
-		var s := Vector2(start) / (float(builder.GRID) * float(builder.SCALE)) * CELL
-		_marker(s, Color("#ffd166"))
+		_marker(_to_board(Vector2(start)), Color("#b8860b"))
 
 	var player := _find_player()
 	if player != null:
-		var p := player.global_position / (float(builder.GRID) * float(builder.SCALE)) * CELL
-		_marker(p, GothUI.CYAN)
+		_marker(_to_board(player.global_position), Color("#1a9fb2"), 8.0)
 
 	builder.free()
 
 
+## World pixels to parchment pixels.
+func _to_board(world: Vector2) -> Vector2:
+	if _world_scale <= 0.0:
+		return Vector2.ZERO
+	return _ptf(world / _world_scale)
+
+
+func _pt(cell: Vector2i) -> Vector2:
+	return _ptf(Vector2(cell))
+
+
+func _ptf(cell: Vector2) -> Vector2:
+	return _origin + (cell - _base) * _k
+
+
+## A thin ink outline, so rooms read as drawn boxes rather than fills.
+func _outline(box: Rect2, color: Color, weight: float) -> void:
+	_rect(Rect2(box.position, Vector2(box.size.x, weight)), color)
+	_rect(Rect2(box.position + Vector2(0, box.size.y - weight), Vector2(box.size.x, weight)), color)
+	_rect(Rect2(box.position, Vector2(weight, box.size.y)), color)
+	_rect(Rect2(box.position + Vector2(box.size.x - weight, 0), Vector2(weight, box.size.y)), color)
+
+
 ## Straight hallway between two rooms, drawn only where their footprints line up.
-func _link(a: Rect2i, b: Rect2i) -> void:
-	var col := Color("#3a2f22")
+func _link(a: Rect2i, b: Rect2i, color: Color) -> void:
 	var oy := mini(a.end.y, b.end.y) - maxi(a.position.y, b.position.y)
 	var ox := mini(a.end.x, b.end.x) - maxi(a.position.x, b.position.x)
 	if oy >= 2:
@@ -282,13 +321,13 @@ func _link(a: Rect2i, b: Rect2i) -> void:
 		var x1 := maxi(a.position.x, b.position.x)
 		if x1 > x0 and x1 - x0 <= 9:
 			var y := float(maxi(a.position.y, b.position.y)) + float(oy) * 0.5
-			_rect(Rect2(Vector2(x0, y - 1.5) * CELL, Vector2(float(x1 - x0), 3.0) * CELL), col)
+			_rect(Rect2(_ptf(Vector2(x0, y - 0.9)), Vector2(float(x1 - x0), 1.8) * _k), color)
 	if ox >= 2:
 		var y0 := mini(a.end.y, b.end.y)
 		var y1 := maxi(a.position.y, b.position.y)
 		if y1 > y0 and y1 - y0 <= 9:
 			var x := float(maxi(a.position.x, b.position.x)) + float(ox) * 0.5
-			_rect(Rect2(Vector2(x - 1.5, y0) * CELL, Vector2(3.0, float(y1 - y0)) * CELL), col)
+			_rect(Rect2(_ptf(Vector2(x - 0.9, y0)), Vector2(1.8, float(y1 - y0)) * _k), color)
 
 
 
@@ -457,8 +496,10 @@ func _dot(cell: Vector2, color: Color) -> void:
 	_rect(Rect2(cell - Vector2(2.5, 2.5), Vector2(5, 5)), color)
 
 
-func _marker(cell: Vector2, color: Color) -> void:
-	_dot(cell, color)
+func _marker(cell: Vector2, color: Color, spread := 5.0) -> void:
+	_rect(Rect2(cell - Vector2(spread * 1.6, spread * 1.6), Vector2(spread * 3.2, spread * 3.2)),
+		Color(color.r, color.g, color.b, 0.2))
+	_rect(Rect2(cell - Vector2(spread, spread) * 0.5, Vector2(spread, spread)), color)
 
 
 func _label(text: String, box: Rect2, color: Color, size: int) -> void:
