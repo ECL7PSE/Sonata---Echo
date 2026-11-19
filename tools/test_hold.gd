@@ -85,9 +85,10 @@ func _initialize() -> void:
 	print("overlap    : first=%d now=%d dmg=%d hits=%d" % [
 		first, b._hold_note, b._dmg_dealt, b._hits])
 	_check(first == 0, "the first long note must start holding")
-	# Either the second press is refused (still holding note 0) or the first hold
-	# is finished properly first. It must never be forgotten mid-hold.
-	_check(b._hold_note == 0, "pressing again mid-hold must not move the held note")
+	# A second long note resolves the first one rather than orphaning it: the
+	# abandoned hold is banked as a miss and the new note takes over.
+	_check(b._hold_note == -1, "a new press must end the held long note")
+	_check(b._misses == 1, "the abandoned hold must count exactly one miss")
 
 	# --- report
 	if _fails.is_empty():

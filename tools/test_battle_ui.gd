@@ -22,13 +22,11 @@ func _initialize() -> void:
 		if n is Label:
 			labels[str(n.text)] = n
 
-	for name in ["ATTACK", "REST", "FEINT"]:
-		if not labels.has(name):
-			problems.append("missing lane label " + name)
-		else:
-			var ly: float = labels[name].position.y
-			if ly < 506.0:
-				problems.append("lane label %s at y=%.0f overlaps the track" % [name, ly])
+	# The lane headings were dropped on request: the keycaps above the judge line
+	# are the only lane labels now.
+	for word in ["ATTACK", "REST", "FEINT"]:
+		if labels.has(word):
+			problems.append("lane heading %s should have been removed" % word)
 
 	if b._beat_dots.size() != 4:
 		problems.append("expected 4 beat dots, got %d" % b._beat_dots.size())

@@ -42,7 +42,6 @@ const DUEL_Y0 := 10.0
 const DUEL_SLOT_W := 40.0
 const DUEL_SLOT_H := 28.0
 const DUEL_PITCH := 48.0
-const ROW_NAMES := ["ATTACK", "REST", "FEINT"]
 const ROW_COLORS := [Color("#ff5a5a"), Color("#c9c9d4"), Color("#b07bff")]
 const CYAN := Color("#7cf6ff")
 # Judgement SFX: one hit thud per lane, a perfect sparkle, and a dull miss.
@@ -268,13 +267,6 @@ func _build_highway() -> void:
 			div.size = Vector2(2, JUDGE_Y - TRACK_TOP)
 			div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_root.add_child(div)
-
-		var name_lbl := _label(ROW_NAMES[i], 16, ROW_COLORS[i])
-		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.position = Vector2(LANE_CENTER[i] - 70, JUDGE_Y + 58)
-		name_lbl.size = Vector2(140, 24)
-		name_lbl.z_index = 5
-		_root.add_child(name_lbl)
 
 	_hit_glow = ColorRect.new()
 	_hit_glow.color = Color(CYAN, 0.22)
@@ -814,15 +806,18 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			_try_hit(lane, event.physical_keycode)
 			return
-		# Releasing the key that started the hold breaks it early.
+		# Letting go resolves the long note at once, so the head never keeps
+		# riding the judge line after the key is already up.
 		if not event.pressed and _hold_note >= 0 and _hold_key == event.physical_keycode:
 			get_viewport().set_input_as_handled()
 			var bar: float = float(_pattern[_hold_note]["hold"]) * _beat_sec
 			var held: float = _phase_time - _note_time(_hold_note)
-			# Sustained most of the bar (or let go right at the tail): done.
+			# Sustained enough of the bar (or let go right at the tail): banked.
 			# Hollow Note drops the required sustain to a third.
 			var need := 0.25 if GameState.echo_on("hollow_note") else 0.6
-			if tail_gap(_hold_note) > 0.12 and held < bar * need:
+			if held >= bar * need or tail_gap(_hold_note) <= 0.12:
+				_complete_hold()
+			else:
 				_break_hold()
 			return
 	if event.is_action_pressed("ui_accept"):
@@ -854,6 +849,10 @@ func _try_hit(lane: int, key: int = 0) -> void:
 		return
 
 	_judged[best] = true
+	# Any new press ends the previous long note: counting a dropped hold as a
+	# miss here is what stops it riding the judge line after the player moved on.
+	if _hold_note >= 0:
+		_break_hold()
 	_phase_hits += 1
 	# Every lane is a normal note now: press its key on the beat, it lands.
 	var dmg := 2 if best_dt <= PERFECT else 1
@@ -896,11 +895,18 @@ func _tick_hold() -> void:
 		return
 	var tail := _note_time(_hold_note) + float(_pattern[_hold_note]["hold"]) * _beat_sec
 	if _phase_time >= tail:
-		# Held cleanly through the tail: reward quietly, no extra damage.
-		var i := _hold_note
-		_pop_feedback("HOLD", CYAN)
-		_burst(i, Color(0.5, 1.6, 0.7))
-		_clear_hold()
+		_complete_hold()
+
+
+## The long note was carried far enough: bank it now instead of waiting for the
+## tail. No extra damage - the press already paid.
+func _complete_hold() -> void:
+	if _hold_note < 0:
+		return
+	var i := _hold_note
+	_pop_feedback("HOLD", CYAN)
+	_burst(i, Color(0.5, 1.6, 0.7))
+	_clear_hold()
 
 
 func _break_hold() -> void:

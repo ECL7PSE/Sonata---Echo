@@ -178,6 +178,19 @@ static func props() -> Array[Vector2i]:
 	return PROPS
 
 
+## Which floor is being built, mixed into every draw below.
+##
+## The dungeon sets this once from the run seed and the depth, so descending
+## reshuffles spawn positions and head counts without touching the room plan.
+## Tools that never run a dungeon keep the default, and they compute their
+## expectations through these same functions, so both sides always agree.
+static var floor_seed := 1
+
+
+static func set_floor(seed_value: int, depth: int) -> void:
+	floor_seed = (int(hash([seed_value, depth])) & 0x7FFFFFFF) | 1
+
+
 static func monster_key(room_name: String) -> String:
 	return ROOM_MONSTER.get(room_name, "")
 
@@ -207,7 +220,11 @@ static func enemy_count(room: Rect2i, room_name: String = "") -> int:
 	if room_name != "" and COUNT_OVERRIDE.has(room_name):
 		return int(COUNT_OVERRIDE[room_name])
 	var px := float(room.size.x) * SCREEN_PX_PER_TILE
-	return clampi(int(round(px / PER_ENEMY_PX)), MIN_ENEMY, MAX_ENEMY)
+	var n := clampi(int(round(px / PER_ENEMY_PX)), MIN_ENEMY, MAX_ENEMY)
+	# One more or one fewer head than the width rule says, rolled per floor.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = room_seed(room_name + "#heads")
+	return clampi(n + rng.randi_range(-1, 1), MIN_ENEMY, MAX_ENEMY)
 
 
 ## A stable seed per room. Named, not hashed, so the same room always lays out
@@ -229,7 +246,7 @@ static func room_seed(room_name: String) -> int:
 	h = (h ^ (h >> 13)) & 0xFFFFFFFF
 	h = (h * 0xC2B2AE35) & 0xFFFFFFFF
 	h = (h ^ (h >> 16)) & 0xFFFFFFFF
-	return h | 1
+	return (h ^ floor_seed) | 1
 
 
 ## The cells enemies occupy, in order. `blocked` holds traps, chests and torches;

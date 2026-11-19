@@ -487,6 +487,23 @@ const TP_FRAMES := 14
 var _grid: Array = []
 var _trap_frames: SpriteFrames
 func _ready() -> void:
+	# A run gets one seed; every floor derives its own from seed+depth, so
+	# descending reshuffles the spawn scatter and the head counts.
+	# Looked up through the tree, not by identifier: tools preload this script
+	# outside the running game, where autoload names do not resolve.
+	var state := get_node_or_null("/root/GameState")
+	var run_seed := 0
+	if state != null:
+		run_seed = int(state.get("run_seed"))
+	if run_seed == 0:
+		run_seed = randi()
+		if state != null:
+			state.set("run_seed", run_seed)
+	var depth := 1
+	if state != null:
+		depth = int(state.get("depth"))
+	SPAWNER.set_floor(run_seed, depth)
+
 	_grid = _build_grid()
 	var problems := _validate(_grid)
 	if not problems.is_empty():
