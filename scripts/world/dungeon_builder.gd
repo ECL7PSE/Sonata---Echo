@@ -488,6 +488,9 @@ var _grid: Array = []
 var _trap_frames: SpriteFrames
 ## The door taken on the way down, read once in _ready().
 var _choice := ""
+## The chest cell that bites on this floor. Seeded, so the same floor always
+## has the same cursed chest and the next floor moves it.
+var _cursed_cell := Vector2i(-1, -1)
 func _ready() -> void:
 	# A run gets one seed; every floor derives its own from seed+depth, so
 	# descending reshuffles the spawn scatter and the head counts.
@@ -505,6 +508,9 @@ func _ready() -> void:
 	if state != null:
 		depth = int(state.get("depth"))
 	SPAWNER.set_floor(run_seed, depth)
+	# One chest per floor bites. The pick is seeded from the floor, so the same
+	# floor always has the same cursed chest and descending moves the curse.
+	_cursed_cell = _pick_cursed_chest(run_seed, depth)
 	# The door taken on the way down shapes this floor, then is cleared so it
 	# only ever applies to one descent.
 	if state != null:
@@ -1414,6 +1420,19 @@ func _is_final_chest(cell: Vector2i) -> bool:
 	return cell == FINAL_CHEST
 
 
+## The chest cell that bites on this floor.
+##
+## Seeded from the floor seed and depth, so the same floor always produces the
+## same cursed chest. Never the final chest: that one is a doorway, not a payout.
+func _pick_cursed_chest(run_seed: int, depth: int) -> Vector2i:
+	var pool := CHESTS.size() - 1
+	if pool <= 0:
+		return Vector2i(-1, -1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = run_seed * 31 + depth * 7919
+	return CHESTS[rng.randi_range(0, pool - 1)]
+
+
 func _make_chest(cell: Vector2i) -> Area2D:
 	var node := Area2D.new()
 	node.name = "Chest_%d_%d" % [cell.x, cell.y]
@@ -1422,6 +1441,8 @@ func _make_chest(cell: Vector2i) -> Area2D:
 	# The chest in the LAST room is a doorway, not a payout: opening it sends the
 	# player back to PlayerStart and respawns every enemy.
 	node.set("resets_the_run", _is_final_chest(cell))
+	# One chest per floor bites: a heart, but double the gold.
+	node.set("cursed", cell == _cursed_cell)
 	# HOARD floors pay double at every chest.
 	if _choice == "hoard" and not _is_final_chest(cell):
 		node.set("coin_count", int(node.get("coin_count")) * 2)

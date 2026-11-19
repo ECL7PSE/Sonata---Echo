@@ -20,6 +20,9 @@ extends Area2D
 @export var idle_animation := "idle"
 @export var open_animation := "open"
 @export var coin_count := 5
+## A cursed chest bites: opening it costs the player a heart and pays double.
+## It is tinted so the player can see the risk before they swing.
+@export var cursed := false
 ## The LAST chest in the run. Opening it does not pay out: it sends the player
 ## back to PlayerStart and puts every enemy back to sleep, which is how the run
 ## loops instead of ending.
@@ -34,7 +37,9 @@ const CoinDrop := preload("res://scripts/items/coin_drop.gd")
 
 @onready var sprite: AnimatedSprite2D = $Sprite
 
-var _used := false
+## True once the chest has been opened. Public, so the map can tell an unopened
+## chest from an emptied one.
+var opened := false
 var _cooldown_left := 0.0
 
 
@@ -45,6 +50,10 @@ func _ready() -> void:
 	collision_layer = Layers.WORLD
 	collision_mask = Layers.prop_mask()
 	sprite.play(idle_animation)
+	# The curse is visible BEFORE the swing: a purple chest is a warning, not a
+	# surprise.
+	if cursed:
+		sprite.modulate = Color(0.72, 0.45, 1.0)
 	area_entered.connect(_on_area_entered)
 
 
@@ -54,19 +63,31 @@ func _process(delta: float) -> void:
 
 
 func _on_area_entered(area: Area2D) -> void:
-	if _used or _cooldown_left > 0.0 or area == null:
+	if opened or _cooldown_left > 0.0 or area == null:
 		return
 	# Only the player's slash should trigger the chest.
 	if not area.get_parent() is CharacterBody2D:
 		return
-	_used = true
+	opened = true
 	# chest_open here, and coin_drop ONCE for the whole chest - not once per
 	# coin, which would turn a single opening into a dozen overlapping clatters.
 	_sfx("chest_open")
 	_sfx("coin_drop")
 	_cooldown_left = cooldown
 	sprite.play(open_animation)
+	if cursed:
+		_bite(area.get_parent())
 	_spawn_coins()
+
+
+## The curse: one heart, taken from whoever opened it.
+##
+## The damage goes through the same take_damage() every monster uses, so
+## invincibility frames and knockback apply exactly as they do for a hit.
+func _bite(body: Node) -> void:
+	if body == null or not body.has_method("take_damage"):
+		return
+	body.take_damage(2, global_position)
 
 
 ## Drops the gold through the shared coin system.
@@ -89,7 +110,9 @@ func _spawn_coins() -> void:
 	# that moment makes the engine throw "Can't change this state while flushing
 	# queries" and the coins end up with no collider at all. Waiting a frame sidesteps
 	# it entirely.
-	CoinDrop.drop.call_deferred(parent, global_position, coin_count, 34.0,
+	# A cursed chest pays double: the bite is the price.
+	var count := coin_count * 2 if cursed else coin_count
+	CoinDrop.drop.call_deferred(parent, global_position, count, 34.0,
 			_floor())
 
 
