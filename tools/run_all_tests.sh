@@ -24,7 +24,10 @@ GODOT="${GODOT:-godot}"
 FILTER="${1:-}"
 
 SUITES="check_layout test_monster_db test_enemy_core test_mimic test_smoke \
-test_player_damage test_trap_slow test_trap_cycle test_chest_slash"
+test_player_damage test_trap_slow test_trap_cycle test_chest_slash \
+test_coin_clearance test_battle_ui test_hold test_echoes test_audio \
+check_map check_bench check_shade check_cursed_chest check_floors \
+audit_wall_holes"
 
 # Seconds before a suite is declared hung and failed.
 TIMEOUT="${TIMEOUT:-300}"
