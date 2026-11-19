@@ -10,6 +10,9 @@ const PATH := "user://settings.cfg"
 var music := 1.0
 var sfx := 1.0
 var fullscreen := false
+## Window size to come back to when leaving fullscreen, so the window does not
+## return at some cramped default.
+var _windowed_size := Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -38,8 +41,20 @@ func save_settings() -> void:
 func apply() -> void:
 	_set_bus("Music", music)
 	_set_bus("SFX", sfx)
-	if fullscreen:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	var mode := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen \
+		else DisplayServer.WINDOW_MODE_WINDOWED
+	if DisplayServer.window_get_mode() != mode:
+		DisplayServer.window_set_mode(mode)
+		if not fullscreen and _windowed_size != Vector2i.ZERO:
+			DisplayServer.window_set_size(_windowed_size)
+
+
+## F11 toggles from anywhere, including mid-run.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode == KEY_F11:
+		set_fullscreen(not fullscreen)
+		get_viewport().set_input_as_handled()
 
 
 func set_music(value: float) -> void:
@@ -57,10 +72,14 @@ func set_sfx(value: float) -> void:
 ## Returns the mode actually in effect. Embedded editor views ignore the
 ## request, so callers can tell the user why nothing happened.
 func set_fullscreen(on: bool) -> bool:
+	if on and not fullscreen:
+		_windowed_size = DisplayServer.window_get_size()
 	fullscreen = on
 	DisplayServer.window_set_mode(
 		DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED
 	)
+	if not on and _windowed_size != Vector2i.ZERO:
+		DisplayServer.window_set_size(_windowed_size)
 	save_settings()
 	var want := DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED
 	return DisplayServer.window_get_mode() == want

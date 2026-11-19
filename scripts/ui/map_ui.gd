@@ -26,6 +26,7 @@ var _board: Control
 var _echoes_box: Control
 var _legend: Label
 var _worn: Label
+var _coins: Label
 var _page := PAGE_MAP
 var _i_paused := false
 
@@ -104,6 +105,17 @@ func _build() -> void:
 	_title.offset_top = 18
 	_title.offset_bottom = 62
 	_panel.add_child(_title)
+
+	_coins = GothUI.label("COINS 0", 18, Color("#ffd166"))
+	_coins.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_coins.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_coins.anchor_left = 1.0
+	_coins.anchor_right = 1.0
+	_coins.offset_left = -300
+	_coins.offset_right = -92
+	_coins.offset_top = 26
+	_coins.offset_bottom = 58
+	_panel.add_child(_coins)
 
 	var close_btn := GothUI.close_button(40.0)
 	close_btn.anchor_left = 1.0
@@ -190,6 +202,9 @@ func _build_tabs() -> void:
 
 func _refresh() -> void:
 	_title.text = "MAP" if _page == PAGE_MAP else "ECHOES"
+	var state := get_node_or_null("/root/GameState")
+	if state != null and _coins != null:
+		_coins.text = "COINS %d" % int(state.get("coins"))
 	_map_page.visible = _page == PAGE_MAP
 	_echo_page.visible = _page == PAGE_ECHOES
 	if _page == PAGE_MAP:
@@ -212,32 +227,73 @@ func _refresh_map() -> void:
 	var explored: Array = state.get("explored") if state != null else []
 	var bell: bool = bool(state.call("echo_on", "grave_bell")) if state != null else false
 
+	# Dotted grid first, so the parchment reads as a map and not an empty box.
+	for gy in range(0, 44, 2):
+		for gx in range(0, 44, 2):
+			_rect(Rect2(Vector2(gx, gy) * CELL, Vector2(1.5, 1.5)), Color("#332a1f"))
+
+	# Every room shows its footprint; only the ones you have walked into are inked.
 	for room_name in rooms:
-		if not (room_name in explored):
-			continue
 		var r: Rect2i = rooms[room_name]
 		var box := Rect2(Vector2(r.position) * CELL, Vector2(r.size) * CELL)
-		_rect(box, GothUI.BORDER)
-		_rect(box.grow(-2.0), Color("#3a2e22"))
+		if not (room_name in explored):
+			_rect(box, Color("#241d16"))
+			continue
+		_rect(box, Color("#15100b"))
+		_rect(box.grow(-1.5), Color("#6b563a"))
+		_rect(box.grow(-3.5), Color("#4a3b2a"))
+		if box.size.x >= 54.0 and box.size.y >= 26.0:
+			_label(room_name.replace("_", " "), box.grow(-4.0), Color("#c8b48a"), 9)
 		if room_name == "bone_hall":
-			_label("X", box, GothUI.CRIMSON, 14)
+			_label("X", Rect2(box.position, Vector2(box.size.x, 18.0)), GothUI.CRIMSON, 14)
 		if bell:
-			_label(str(_enemies_left(room_name)), box, GothUI.TEXT, 12)
+			_label(str(_enemies_left(room_name)), Rect2(box.position + Vector2(0, box.size.y - 16.0),
+				Vector2(box.size.x, 16.0)), GothUI.TEXT, 11)
+
+	# Hallways between rooms you have seen.
+	var seen: Array = []
+	for room_name in rooms:
+		if room_name in explored:
+			seen.append(room_name)
+	for i in seen.size():
+		for j in range(i + 1, seen.size()):
+			_link(rooms[seen[i]], rooms[seen[j]])
 
 	var start: Variant = _player_start()
 	if start != null:
 		var s := Vector2(start) / (float(builder.GRID) * float(builder.SCALE)) * CELL
-		_dot(s, Color("#ffd166"))
+		_marker(s, Color("#ffd166"))
 
 	var player := _find_player()
 	if player != null:
 		var p := player.global_position / (float(builder.GRID) * float(builder.SCALE)) * CELL
-		_dot(p, GothUI.CYAN)
+		_marker(p, GothUI.CYAN)
 
 	builder.free()
 
 
-## The three worn slots, then every echo you can wear.
+## Straight hallway between two rooms, drawn only where their footprints line up.
+func _link(a: Rect2i, b: Rect2i) -> void:
+	var col := Color("#3a2f22")
+	var oy := mini(a.end.y, b.end.y) - maxi(a.position.y, b.position.y)
+	var ox := mini(a.end.x, b.end.x) - maxi(a.position.x, b.position.x)
+	if oy >= 2:
+		var x0 := mini(a.end.x, b.end.x)
+		var x1 := maxi(a.position.x, b.position.x)
+		if x1 > x0 and x1 - x0 <= 9:
+			var y := float(maxi(a.position.y, b.position.y)) + float(oy) * 0.5
+			_rect(Rect2(Vector2(x0, y - 1.5) * CELL, Vector2(float(x1 - x0), 3.0) * CELL), col)
+	if ox >= 2:
+		var y0 := mini(a.end.y, b.end.y)
+		var y1 := maxi(a.position.y, b.position.y)
+		if y1 > y0 and y1 - y0 <= 9:
+			var x := float(maxi(a.position.x, b.position.x)) + float(ox) * 0.5
+			_rect(Rect2(Vector2(x - 1.5, y0) * CELL, Vector2(3.0, float(y1 - y0)) * CELL), col)
+
+
+
+## The three worn slots, then only the echoes you actually own. Empty until you
+## buy one - this is your bag, not the shop's shelf.
 func _refresh_echoes() -> void:
 	for c in _echoes_box.get_children():
 		c.queue_free()
@@ -270,16 +326,33 @@ func _refresh_echoes() -> void:
 			tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_echoes_box.add_child(tag)
 
-	# The whole catalogue, two columns of three.
-	var ids: Array = echoes.keys()
-	for i in ids.size():
-		var id := str(ids[i])
+	# Nothing bought yet: say so instead of showing a catalogue.
+	if owned.is_empty():
+		var empty := GothUI.label("EMPTY", 20, GothUI.DIM)
+		empty.position = Vector2(0, 150)
+		empty.size = Vector2(500, 28)
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_echoes_box.add_child(empty)
+
+		var hint := GothUI.label("echoes are bought at a bench", 12, GothUI.DIM)
+		hint.position = Vector2(0, 182)
+		hint.size = Vector2(500, 20)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_echoes_box.add_child(hint)
+		return
+
+	# What you own, two columns.
+	var top := slot_w + 26.0
+	for i in owned.size():
+		var id := str(owned[i])
 		var col := i % 2
 		var row := i / 2
 		var cell := Rect2(
-			Vector2(float(col) * 256.0, slot_w + 26.0 + float(row) * 110.0),
+			Vector2(float(col) * 256.0, top + float(row) * 110.0),
 			Vector2(244, 100))
-		_add_echo_cell(id, cell, id in owned, id in worn, int(echoes.get(id, {}).get("cost", 0)))
+		_add_echo_cell(id, cell, true, id in worn, 0)
 
 
 func _add_echo_cell(id: String, cell: Rect2, owned: bool, worn: bool, cost: int) -> void:
@@ -379,12 +452,13 @@ func _rect_into(parent: Control, box: Rect2, color: Color) -> void:
 
 
 func _dot(cell: Vector2, color: Color) -> void:
-	var c := ColorRect.new()
-	c.color = color
-	c.position = cell - Vector2(3, 3)
-	c.size = Vector2(6, 6)
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_board.add_child(c)
+	var glow := Color(color.r, color.g, color.b, 0.22)
+	_rect(Rect2(cell - Vector2(6, 6), Vector2(12, 12)), glow)
+	_rect(Rect2(cell - Vector2(2.5, 2.5), Vector2(5, 5)), color)
+
+
+func _marker(cell: Vector2, color: Color) -> void:
+	_dot(cell, color)
 
 
 func _label(text: String, box: Rect2, color: Color, size: int) -> void:
