@@ -888,6 +888,8 @@ func _try_hit(lane: int, key: int = 0) -> void:
 		_pop_feedback("PERFECT", CYAN)
 		_perfect_kick()
 		_play_sfx(SFX_PERFECT)
+		# The SONG family: a perfect hit rings a coin loose.
+		GameState.add_coins(GameState.perfect_bonus())
 	else:
 		_pop_feedback("GOOD", Color("#9fffc9"))
 	_play_sfx(SFX_HIT[lane])

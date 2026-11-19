@@ -84,6 +84,26 @@ func _initialize() -> void:
 	gs.echoes_equipped.assign(["hollow_note", "metronome", "candle_stub"])
 	_check(gs.family_complete("song") == false, "a split family must not be complete")
 	_check(gs.family_worn("grave") == 1, "the grave family counts its worn echoes")
+	_check(gs.family_bonus() == "", "a split family grants no bonus")
+
+	# --- the song family pays for perfect hits
+	gs.echoes_equipped.assign(["hollow_note", "metronome", "grubsong"])
+	_check(gs.perfect_bonus() == 1, "the song family pays a coin per perfect hit")
+	_check(gs.family_bonus().begins_with("SONG"), "the song family says what it does")
+
+	# --- the grave family makes every coin worth more
+	gs.echoes_equipped.assign(["candle_stub", "dead_mans_toll", "grave_bell"])
+	_check(gs.perfect_bonus() == 0, "the grave family pays no perfect bonus")
+	_check(gs.family_bonus().begins_with("GRAVE"), "the grave family says what it does")
+	gs.coin_value = 1
+	_check(gs.coin_worth() == 2, "the grave family adds a coin to every coin (got %d)"
+		% gs.coin_worth())
+	gs.coin_value = 2
+	_check(gs.coin_worth() == 3, "a combat floor and the grave family stack (got %d)"
+		% gs.coin_worth())
+	gs.coin_value = 1
+	# Back to the song family, so the reset checks below still find metronome worn.
+	gs.echoes_equipped.assign(["hollow_note", "metronome", "grubsong"])
 
 	# --- death wipes the map but keeps the echoes
 	gs.reset()

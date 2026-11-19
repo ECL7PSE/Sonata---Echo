@@ -163,6 +163,29 @@ func family_complete(family: String) -> bool:
 	return not members.is_empty() and family_worn(family) == members.size()
 
 
+## What the complete family does for you, in words. Empty when none is.
+func family_bonus() -> String:
+	if family_complete("song"):
+		return "SONG: perfect hits pay 1 coin"
+	if family_complete("grave"):
+		return "GRAVE: every coin is worth 1 more"
+	return ""
+
+
+## What a single coin is worth right now: the floor's value, plus the grave
+## family bonus.
+func coin_worth() -> int:
+	var v := maxi(1, coin_value)
+	if family_complete("grave"):
+		v += 1
+	return v
+
+
+## What a PERFECT hit rings loose. Zero unless the song family is complete.
+func perfect_bonus() -> int:
+	return 1 if family_complete("song") else 0
+
+
 ## Price after the Candle Stub discount.
 func echo_cost(id: String) -> int:
 	var c := int(ECHOES.get(id, {}).get("cost", 0))

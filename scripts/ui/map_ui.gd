@@ -175,7 +175,7 @@ func _build_echo_page() -> void:
 
 	_worn = GothUI.label("WORN 0/3", 16, GothUI.DIM)
 	_worn.position = Vector2(50, 74)
-	_worn.size = Vector2(240, 24)
+	_worn.size = Vector2(440, 24)
 	_echo_page.add_child(_worn)
 
 	_echoes_box = Control.new()
@@ -355,6 +355,10 @@ func _refresh_echoes() -> void:
 	var worn: Array = state.get("echoes_equipped")
 	var slots: int = int(state.get("ECHO_SLOTS"))
 	_worn.text = "WORN %d/%d" % [worn.size(), slots]
+	# A complete family says what it does for you.
+	var bonus := str(state.call("family_bonus"))
+	if not bonus.is_empty():
+		_worn.text += "    " + bonus
 
 	# Slots across the top.
 	var slot_w := 84.0

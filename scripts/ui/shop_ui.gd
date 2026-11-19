@@ -109,7 +109,7 @@ func _add_coins(panel: Control) -> void:
 	_slots = GothUI.label("WORN 0/3", 16, GothUI.DIM)
 	_slots.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_slots.offset_left = 50
-	_slots.offset_right = 250
+	_slots.offset_right = 640
 	_slots.offset_top = 32
 	_slots.offset_bottom = 60
 	panel.add_child(_slots)
@@ -195,6 +195,10 @@ func _refresh() -> void:
 		return
 	_coins.text = "COINS: %d" % GameState.coins
 	_slots.text = "WORN %d/%d" % [GameState.echoes_equipped.size(), GameState.ECHO_SLOTS]
+	# A complete family says what it does for you.
+	var bonus := GameState.family_bonus()
+	if not bonus.is_empty():
+		_slots.text += "    " + bonus
 	for row in _rows:
 		var id: String = row.id
 		var own: bool = GameState.has_echo(id)
