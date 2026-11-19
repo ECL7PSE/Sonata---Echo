@@ -93,6 +93,8 @@ var echoes_owned: Array[String] = []
 var echoes_equipped: Array[String] = []
 ## Rooms the player has walked into this run, for the map.
 var explored: Array[String] = []
+## Rooms that hold a boss, for the map.
+var boss_rooms: Array[String] = []
 
 ## How far each owned echo has been reinforced at the bench: id -> 0..ECHO_LEVEL_MAX.
 var echo_levels := {}
@@ -225,6 +227,13 @@ func mark_explored(room_name: String) -> void:
 	if room_name.is_empty() or room_name in explored:
 		return
 	explored.append(room_name)
+
+
+## Remembers a room that holds a boss, so the map can point at the fight.
+func mark_boss_room(room_name: String) -> void:
+	if room_name.is_empty() or room_name in boss_rooms:
+		return
+	boss_rooms.append(room_name)
 
 
 ## Adds coins and notifies the HUD. Returns the new total.

@@ -234,6 +234,7 @@ func _refresh_map() -> void:
 	# Through /root so this script compiles in --script tools too.
 	var state := get_node_or_null("/root/GameState")
 	var explored: Array = state.get("explored") if state != null else []
+	var boss_rooms: Array = state.get("boss_rooms") if state != null else []
 	var bell: bool = bool(state.call("echo_on", "grave_bell")) if state != null else false
 	var bell_level: int = int(state.call("echo_level", "grave_bell")) if state != null else 0
 
@@ -267,6 +268,10 @@ func _refresh_map() -> void:
 		if seen:
 			_rect(box, ROOM_INK)
 		_outline(box, INK if seen else INK_SOFT, 1.5 if seen else 1.0)
+		# The boss is marked before the fight, not remembered after it.
+		if room_name in boss_rooms:
+			_marker(_ptf(Vector2(r.position) + Vector2(r.size) * 0.5),
+				GothUI.CRIMSON, 9.0)
 		# Grave Bell at +1 reads every room, walked or not.
 		if not seen and not (bell and bell_level > 0):
 			continue
@@ -285,9 +290,15 @@ func _refresh_map() -> void:
 		var total := 0
 		for room_name in names:
 			total += _enemies_left(room_name)
-		_legend.text = "outline = unexplored    filled = explored    X = the way down    enemies left: %d" % total
+		_legend.text = "outline = unexplored    filled = explored    X = the way down    gold = chest    red = boss    enemies left: %d" % total
 	else:
-		_legend.text = "outline = unexplored    filled = explored    X = the way down"
+		_legend.text = "outline = unexplored    filled = explored    X = the way down    gold = chest    red = boss"
+
+	# A gold dot on every chest that is still waiting to be opened. This is the
+	# map paying off: the loot is where the dot is.
+	for chest in _live_chests():
+		if not bool(chest.get("opened")):
+			_dot(_to_board(chest.global_position), Color("#d4af37"))
 
 	var start: Variant = _player_start()
 	if start != null:
@@ -536,6 +547,31 @@ func _enemies_left(room_name: String) -> int:
 		if str(e.name).begins_with(marker):
 			n += 1
 	return n
+
+
+## The chests standing in the live dungeon.
+##
+## Read off the real nodes, so the `opened` flag is the truth: a chest the
+## player has already looted loses its gold dot.
+func _live_chests() -> Array:
+	var out: Array = []
+	if not is_inside_tree():
+		return out
+	var cs := get_tree().current_scene
+	if cs == null:
+		cs = get_tree().root
+	if cs == null:
+		return out
+	var dungeon := cs.find_child("Dungeon", true, false)
+	if dungeon == null:
+		return out
+	var props := dungeon.get_node_or_null("Props")
+	if props == null:
+		return out
+	for child in props.get_children():
+		if str(child.name).begins_with("Chest_"):
+			out.append(child)
+	return out
 
 
 ## PlayerStart of the current floor, in world pixels.

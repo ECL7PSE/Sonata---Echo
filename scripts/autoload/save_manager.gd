@@ -192,6 +192,7 @@ func save_run(player: Node) -> void:
 	cfg.set_value("run", "echoes_equipped", GameState.echoes_equipped)
 	cfg.set_value("run", "echo_levels", GameState.echo_levels)
 	cfg.set_value("run", "explored", GameState.explored)
+	cfg.set_value("run", "boss_rooms", GameState.boss_rooms)
 	cfg.set_value("run", "tutorial_done", GameState.tutorial_done)
 	cfg.set_value("run", "shade_coins", shade_coins)
 	cfg.set_value("run", "shade_scene", shade_scene)
@@ -226,6 +227,7 @@ func load_save() -> void:
 	if lv is Dictionary:
 		GameState.echo_levels = lv.duplicate()
 	GameState.explored = _strings(cfg.get_value("run", "explored", []))
+	GameState.boss_rooms = _strings(cfg.get_value("run", "boss_rooms", []))
 	GameState.tutorial_done = bool(cfg.get_value("run", "tutorial_done", false))
 	shade_coins = int(cfg.get_value("run", "shade_coins", 0))
 	shade_scene = str(cfg.get_value("run", "shade_scene", ""))

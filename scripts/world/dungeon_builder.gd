@@ -1309,6 +1309,7 @@ func _place_enemy_spawns() -> void:
 					null, is_boss)
 			if is_boss:
 				enemy.name = "Enemy_%s_%d_%d_boss" % [room_name, cell.x, cell.y]
+				_mark_boss_room(room_name)
 			spawns.add_child(enemy)
 		triggers.add_child(SPAWNER.make_trigger(ROOMS[room_name], room_name))
 		print("spawn %-11s %-12s %d enemy/enemies%s"
@@ -1431,6 +1432,14 @@ func _pick_cursed_chest(run_seed: int, depth: int) -> Vector2i:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = run_seed * 31 + depth * 7919
 	return CHESTS[rng.randi_range(0, pool - 1)]
+
+
+## Tells the map which room the boss is in, so the fight is marked before it
+## starts rather than remembered afterwards.
+func _mark_boss_room(room_name: String) -> void:
+	var state := get_node_or_null("/root/GameState")
+	if state != null:
+		state.call("mark_boss_room", room_name)
 
 
 func _make_chest(cell: Vector2i) -> Area2D:
