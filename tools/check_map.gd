@@ -28,6 +28,14 @@ func _initialize() -> void:
 	_check(hall.size.x > 0 and hall.size.y > 0, "hall must have a real footprint")
 	builder.free()
 
+	# Echo descriptions must be hand-wrapped or they run under the next cell.
+	if _map != null:
+		var wrapped: String = _map.call("_wrap",
+			"Long notes need only a third of the bar.", 22)
+		_check(wrapped.contains("\n"), "long echo text must wrap onto a second line")
+		for line in wrapped.split("\n"):
+			_check(line.length() <= 22, "wrapped line too long: '%s'" % line)
+
 	if _fails.is_empty():
 		print("RESULT: OK - map builds and the room table reads")
 	else:

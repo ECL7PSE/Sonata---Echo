@@ -11,6 +11,8 @@ signal upgrades_changed(upgrades: Dictionary)
 
 ## How many coins the player is carrying. Coins are deliberately KEPT across death.
 var coins := 0
+## Set once the first-run prompts have finished, so they never repeat.
+var tutorial_done := false
 
 ## Upgrade level per stat, 0..UPGRADE_MAX. Also KEPT across death.
 var upgrades := {"hp": 0, "atk": 0, "spd": 0}

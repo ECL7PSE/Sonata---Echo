@@ -8,6 +8,7 @@ extends CanvasLayer
 signal closed
 
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
+const EchoIcon := preload("res://scripts/ui/echo_icon.gd")
 
 const PANEL_W := 760.0
 const PANEL_H := 560.0
@@ -116,9 +117,16 @@ func _add_coins(panel: Control) -> void:
 func _add_row(panel: Control, id: String, y: float) -> void:
 	var info: Dictionary = GameState.ECHOES[id]
 
+	var icon := EchoIcon.new(id)
+	icon.offset_left = 10
+	icon.offset_right = 48
+	icon.offset_top = y + 5
+	icon.offset_bottom = y + 43
+	panel.add_child(icon)
+
 	var name_label := GothUI.label(str(info.name), 22, GothUI.TEXT)
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.offset_left = 50
+	name_label.offset_left = 58
 	name_label.offset_right = 460
 	name_label.offset_top = y
 	name_label.offset_bottom = y + 26

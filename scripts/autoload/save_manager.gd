@@ -31,6 +31,7 @@ var _hooked_player: Node = null
 ## get_tree() is already gone.
 func _process(_delta: float) -> void:
 	_ensure_map()
+	_ensure_tutorial()
 	if _bench != null and is_instance_valid(_bench) and _hooked_player != null \
 			and is_instance_valid(_hooked_player) and _applied_scene != "":
 		return
@@ -39,6 +40,23 @@ func _process(_delta: float) -> void:
 
 ## The map overlay lives here so Tab works in every room without a HUD to own
 ## it. Created only once a floor with a player is up, never over the menu.
+var _tutorial: Node = null
+
+
+## First-run prompts, floor 1 only, until the player has seen them once.
+func _ensure_tutorial() -> void:
+	if _tutorial != null and is_instance_valid(_tutorial):
+		return
+	if GameState.tutorial_done or GameState.depth > 1:
+		return
+	if not is_inside_tree() or get_tree().current_scene == null:
+		return
+	if _find_player(get_tree().current_scene) == null:
+		return
+	_tutorial = load("res://scripts/ui/tutorial.gd").new()
+	add_child(_tutorial)
+
+
 func _ensure_map() -> void:
 	if _map != null and is_instance_valid(_map):
 		return
@@ -125,6 +143,7 @@ func save_run(player: Node) -> void:
 	cfg.set_value("run", "echoes_owned", GameState.echoes_owned)
 	cfg.set_value("run", "echoes_equipped", GameState.echoes_equipped)
 	cfg.set_value("run", "explored", GameState.explored)
+	cfg.set_value("run", "tutorial_done", GameState.tutorial_done)
 	cfg.save(PATH)
 	has_run = true
 	saved.emit()
@@ -152,6 +171,7 @@ func load_save() -> void:
 	GameState.echoes_owned = _strings(cfg.get_value("run", "echoes_owned", []))
 	GameState.echoes_equipped = _strings(cfg.get_value("run", "echoes_equipped", []))
 	GameState.explored = _strings(cfg.get_value("run", "explored", []))
+	GameState.tutorial_done = bool(cfg.get_value("run", "tutorial_done", false))
 	GameState.echoes_changed.emit()
 
 

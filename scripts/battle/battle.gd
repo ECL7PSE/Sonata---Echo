@@ -79,6 +79,8 @@ var _total_feints := 0
 var _penalty := 1
 var _phase_label: Label
 var _feedback: Label
+## One-time how-to line, only during the first section.
+var _howto: Label
 var _combo_label: Label
 var _hit_line: ColorRect
 var _hit_glow: ColorRect
@@ -326,6 +328,14 @@ func _build_hud() -> void:
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
+	_howto = _label("F on the beat   -   leave REST alone   -   never touch FEINT", 15, Color("#a9a4b8"))
+	_howto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_howto.anchor_right = 1.0
+	_howto.offset_top = 372
+	_howto.offset_bottom = 398
+	_howto.visible = false
+	_root.add_child(_howto)
+
 	var you := _label("YOU", 16, Color("#8fe7ff"))
 	you.offset_left = 20
 	you.offset_right = 280
@@ -553,6 +563,8 @@ func _apply_fills(fills: Array[ColorRect], base_w: float, shown: float) -> void:
 
 func _begin_round() -> void:
 	_round += 1
+	if _howto != null:
+		_howto.visible = _round == 1
 	_pattern = _make_pattern(_round)
 	_build_notes()
 	_enter_phase(P.DEMO)
