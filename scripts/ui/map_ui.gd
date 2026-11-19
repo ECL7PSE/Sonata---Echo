@@ -235,6 +235,7 @@ func _refresh_map() -> void:
 	var state := get_node_or_null("/root/GameState")
 	var explored: Array = state.get("explored") if state != null else []
 	var bell: bool = bool(state.call("echo_on", "grave_bell")) if state != null else false
+	var bell_level: int = int(state.call("echo_level", "grave_bell")) if state != null else 0
 
 	# Fit the dungeon's footprint to the page.
 	var bounds := Rect2i()
@@ -266,9 +267,10 @@ func _refresh_map() -> void:
 		if seen:
 			_rect(box, ROOM_INK)
 		_outline(box, INK if seen else INK_SOFT, 1.5 if seen else 1.0)
-		if not seen:
+		# Grave Bell at +1 reads every room, walked or not.
+		if not seen and not (bell and bell_level > 0):
 			continue
-		if box.size.x >= 90.0 and box.size.y >= 34.0:
+		if seen and box.size.x >= 90.0 and box.size.y >= 34.0:
 			_label(room_name.replace("_", " ").to_upper(), box.grow(-4.0), INK, 14)
 		if room_name == "bone_hall":
 			_label("X", Rect2(box.position + Vector2(0, 1), Vector2(box.size.x, 16.0)),
@@ -276,7 +278,16 @@ func _refresh_map() -> void:
 		if bell:
 			_label(str(_enemies_left(room_name)),
 				Rect2(box.position + Vector2(0, box.size.y - 15.0), Vector2(box.size.x, 15.0)),
-				INK, 10)
+				INK if seen else INK_SOFT, 10)
+
+	# Grave Bell at +2 adds a running tally of everything still standing.
+	if bell and bell_level > 1:
+		var total := 0
+		for room_name in names:
+			total += _enemies_left(room_name)
+		_legend.text = "outline = unexplored    filled = explored    X = the way down    enemies left: %d" % total
+	else:
+		_legend.text = "outline = unexplored    filled = explored    X = the way down"
 
 	var start: Variant = _player_start()
 	if start != null:

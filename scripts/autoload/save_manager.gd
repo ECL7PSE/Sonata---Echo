@@ -190,6 +190,7 @@ func save_run(player: Node) -> void:
 	cfg.set_value("run", "upgrades", GameState.upgrades)
 	cfg.set_value("run", "echoes_owned", GameState.echoes_owned)
 	cfg.set_value("run", "echoes_equipped", GameState.echoes_equipped)
+	cfg.set_value("run", "echo_levels", GameState.echo_levels)
 	cfg.set_value("run", "explored", GameState.explored)
 	cfg.set_value("run", "tutorial_done", GameState.tutorial_done)
 	cfg.set_value("run", "shade_coins", shade_coins)
@@ -221,6 +222,9 @@ func load_save() -> void:
 			GameState.set_upgrade(k, int(up.get(k, 0)))
 	GameState.echoes_owned = _strings(cfg.get_value("run", "echoes_owned", []))
 	GameState.echoes_equipped = _strings(cfg.get_value("run", "echoes_equipped", []))
+	var lv = cfg.get_value("run", "echo_levels", {})
+	if lv is Dictionary:
+		GameState.echo_levels = lv.duplicate()
 	GameState.explored = _strings(cfg.get_value("run", "explored", []))
 	GameState.tutorial_done = bool(cfg.get_value("run", "tutorial_done", false))
 	shade_coins = int(cfg.get_value("run", "shade_coins", 0))
@@ -265,7 +269,8 @@ func apply_to_player(player: Node) -> void:
 func on_death() -> void:
 	var keep := 0
 	if GameState.echo_on("dead_mans_toll"):
-		keep = int(float(GameState.coins) * 0.25)
+		# A reinforced Toll keeps more: 25%, then 40%, then 55%.
+		keep = int(float(GameState.coins) * (0.25 + 0.15 * float(GameState.echo_level("dead_mans_toll"))))
 	var owed := maxi(0, GameState.coins - keep)
 	var drop := pos
 	if _hooked_player != null and is_instance_valid(_hooked_player):

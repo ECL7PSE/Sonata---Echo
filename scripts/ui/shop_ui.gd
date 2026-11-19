@@ -10,11 +10,12 @@ signal closed
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
 const EchoIcon := preload("res://scripts/ui/echo_icon.gd")
 
-const PANEL_W := 760.0
+const PANEL_W := 1000.0
 const PANEL_H := 560.0
 const ROW_STEP := 62.0
 const ROW_H := 46.0
 const BUTTON_W := 150.0
+const UP_W := 130.0
 
 var _coins: Label
 var _slots: Label
@@ -150,7 +151,18 @@ func _add_row(panel: Control, id: String, y: float) -> void:
 	buy.pressed.connect(_on_press.bind(id))
 	panel.add_child(buy)
 
-	_rows.append({"id": id, "name": name_label, "button": buy})
+	# Upgrades sit next to the buy button: same row, same rhythm.
+	var up := GothUI.make_button("UP", Vector2(UP_W, ROW_H), 14)
+	up.anchor_left = 1.0
+	up.anchor_right = 1.0
+	up.offset_left = -BUTTON_W - 40 - UP_W - 10
+	up.offset_right = -BUTTON_W - 50
+	up.offset_top = y + 4
+	up.offset_bottom = y + 4 + ROW_H
+	up.pressed.connect(_on_upgrade.bind(id))
+	panel.add_child(up)
+
+	_rows.append({"id": id, "name": name_label, "desc": desc, "button": buy, "up": up})
 
 
 func _add_close(panel: Control) -> void:
@@ -173,6 +185,11 @@ func _on_press(id: String) -> void:
 	_refresh()
 
 
+func _on_upgrade(id: String) -> void:
+	GameState.upgrade_echo(id)
+	_refresh()
+
+
 func _refresh() -> void:
 	if _coins == null:
 		return
@@ -185,8 +202,13 @@ func _refresh() -> void:
 		var full: bool = GameState.echoes_equipped.size() >= GameState.ECHO_SLOTS
 		var button: Button = row.button
 		var name_label: Label = row.name
+		var desc: Label = row.desc
+		var up: Button = row.up
+		var level: int = GameState.echo_level(id)
+		name_label.text = str(GameState.ECHOES[id].name) + ("" if level == 0 else "  +%d" % level)
 		name_label.add_theme_color_override("font_color",
 			GothUI.CYAN if worn else GothUI.TEXT)
+		desc.text = GameState.echo_desc(id)
 		button.disabled = false
 		if not own:
 			var cost := GameState.echo_cost(id)
@@ -199,6 +221,20 @@ func _refresh() -> void:
 			button.disabled = true
 		else:
 			button.text = "EQUIP"
+
+		# The upgrade button only exists for echoes you already own.
+		up.visible = own
+		up.disabled = false
+		if not own:
+			up.text = "UP"
+		else:
+			var up_cost := GameState.echo_upgrade_cost(id)
+			if up_cost <= 0:
+				up.text = "MAX"
+				up.disabled = true
+			else:
+				up.text = "UP %d" % up_cost
+				up.disabled = GameState.coins < up_cost
 
 
 func _on_changed(_value = null) -> void:

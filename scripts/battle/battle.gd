@@ -835,8 +835,11 @@ func _input(event: InputEvent) -> void:
 			var bar: float = float(_pattern[_hold_note]["hold"]) * _beat_sec
 			var held: float = _phase_time - _note_time(_hold_note)
 			# Sustained enough of the bar (or let go right at the tail): banked.
-			# Hollow Note drops the required sustain to a third.
-			var need := 0.25 if GameState.echo_on("hollow_note") else 0.6
+			# Hollow Note drops the required sustain to a third, and a reinforced
+			# one demands even less of the bar.
+			var need := 0.6
+			if GameState.echo_on("hollow_note"):
+				need = maxf(0.1, 0.25 - 0.05 * float(GameState.echo_level("hollow_note")))
 			if held >= bar * need or tail_gap(_hold_note) <= 0.12:
 				_complete_hold()
 			else:
@@ -857,7 +860,7 @@ func _try_hit(lane: int, key: int = 0) -> void:
 	# Metronome widens the window for the first note of each section.
 	var win := WINDOW
 	if GameState.echo_on("metronome") and _phase_hits == 0:
-		win *= 1.4
+		win *= 1.4 + 0.2 * float(GameState.echo_level("metronome"))
 	var best := -1
 	var best_dt := 999.0
 	for i in _pattern.size():

@@ -42,36 +42,49 @@ signal echoes_changed
 ## How many echoes can be worn at once.
 const ECHO_SLOTS := 3
 
+## `desc` is the level-0 text; `levels` holds the text for each upgrade.
 const ECHOES := {
 	"hollow_note": {
 		"name": "HOLLOW NOTE",
 		"cost": 40,
 		"desc": "Long notes need only a third of the bar.",
+		"levels": ["Long notes need a fifth of the bar.",
+			"Long notes need almost nothing."],
 	},
 	"metronome": {
 		"name": "METRONOME",
 		"cost": 45,
 		"desc": "The first note of a section is easier.",
+		"levels": ["The first note of a section is much easier.",
+			"The first note of a section is a freebie."],
 	},
 	"grubsong": {
 		"name": "GRUBSONG",
 		"cost": 35,
 		"desc": "Taking a hit pays you 3 coins.",
+		"levels": ["Taking a hit pays you 6 coins.",
+			"Taking a hit pays you 9 coins."],
 	},
 	"candle_stub": {
 		"name": "CANDLE STUB",
 		"cost": 50,
 		"desc": "Everything in the shop costs 20% less.",
+		"levels": ["Everything in the shop costs 27% less.",
+			"Everything in the shop costs 34% less."],
 	},
 	"dead_mans_toll": {
 		"name": "DEAD MAN'S TOLL",
 		"cost": 60,
 		"desc": "Death takes three quarters of your coins.",
+		"levels": ["Death keeps 40% of your coins.",
+			"Death keeps more than half your coins."],
 	},
 	"grave_bell": {
 		"name": "GRAVE BELL",
 		"cost": 30,
 		"desc": "Your map counts the enemies left in a room.",
+		"levels": ["Your map counts the enemies in every room.",
+			"Your map counts every enemy left in the floor."],
 	},
 }
 
@@ -81,9 +94,46 @@ var echoes_equipped: Array[String] = []
 ## Rooms the player has walked into this run, for the map.
 var explored: Array[String] = []
 
+## How far each owned echo has been reinforced at the bench: id -> 0..ECHO_LEVEL_MAX.
+var echo_levels := {}
+
+const ECHO_LEVEL_MAX := 2
+
 
 func has_echo(id: String) -> bool:
 	return id in echoes_owned
+
+
+## Reinforcement level of an echo (0 for a fresh purchase).
+func echo_level(id: String) -> int:
+	return int(echo_levels.get(id, 0))
+
+
+## What the next reinforcement costs, or 0 when it cannot be bought.
+func echo_upgrade_cost(id: String) -> int:
+	if not has_echo(id) or echo_level(id) >= ECHO_LEVEL_MAX:
+		return 0
+	return maxi(1, int(float(ECHOES[id].cost) * 0.6 * float(echo_level(id) + 1)))
+
+
+## Reinforces an echo: the same trick, done harder.
+func upgrade_echo(id: String) -> bool:
+	var cost := echo_upgrade_cost(id)
+	if cost <= 0 or not spend_coins(cost):
+		return false
+	echo_levels[id] = echo_level(id) + 1
+	echoes_changed.emit()
+	return true
+
+
+## The description of an echo at its current level.
+func echo_desc(id: String) -> String:
+	var info: Dictionary = ECHOES.get(id, {})
+	var levels: Array = info.get("levels", [])
+	var lv := echo_level(id)
+	if lv > 0 and lv <= levels.size():
+		return str(levels[lv - 1])
+	return str(info.get("desc", ""))
 
 
 ## True when the echo is bought AND worn.
@@ -91,11 +141,34 @@ func echo_on(id: String) -> bool:
 	return id in echoes_equipped
 
 
+## The two echo families. Three worn from one family sets its bonus off.
+const ECHO_FAMILIES := {
+	"song": ["hollow_note", "metronome", "grubsong"],
+	"grave": ["candle_stub", "dead_mans_toll", "grave_bell"],
+}
+
+
+## How many echoes of a family are worn right now.
+func family_worn(family: String) -> int:
+	var n := 0
+	for id in ECHO_FAMILIES.get(family, []):
+		if echo_on(id):
+			n += 1
+	return n
+
+
+## True when every echo of a family is worn.
+func family_complete(family: String) -> bool:
+	var members: Array = ECHO_FAMILIES.get(family, [])
+	return not members.is_empty() and family_worn(family) == members.size()
+
+
 ## Price after the Candle Stub discount.
 func echo_cost(id: String) -> int:
 	var c := int(ECHOES.get(id, {}).get("cost", 0))
 	if echo_on("candle_stub"):
-		c = int(float(c) * 0.8)
+		var cut := 0.2 + 0.07 * float(echo_level("candle_stub"))
+		c = maxi(1, int(float(c) * (1.0 - minf(cut, 0.45))))
 	return c
 
 

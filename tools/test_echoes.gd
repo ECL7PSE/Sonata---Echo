@@ -56,11 +56,41 @@ func _initialize() -> void:
 	gs.mark_explored("")
 	_check(gs.explored.size() == 1, "mark_explored must dedupe (got %d)" % gs.explored.size())
 
+	# --- upgrading an echo spends coins and strengthens it
+	gs.coins = 500
+	gs.echo_levels.clear()
+	var up_cost: int = gs.echo_upgrade_cost("metronome")
+	_check(up_cost > 0, "an owned echo must have an upgrade price")
+	_check(gs.upgrade_echo("metronome"), "upgrading must succeed with coins")
+	_check(gs.coins == 500 - up_cost, "upgrading must spend %d (coins=%d)" % [up_cost, gs.coins])
+	_check(gs.echo_level("metronome") == 1, "upgrading must raise the level")
+	_check(gs.echo_desc("metronome") != gs.ECHOES["metronome"].desc,
+		"an upgraded echo must describe its stronger form")
+	_check(gs.upgrade_echo("metronome"), "the second upgrade must succeed")
+	_check(gs.echo_level("metronome") == gs.ECHO_LEVEL_MAX, "the level must cap at ECHO_LEVEL_MAX")
+	_check(gs.echo_upgrade_cost("metronome") == 0, "a maxed echo must have no upgrade price")
+	_check(not gs.upgrade_echo("metronome"), "a maxed echo must refuse another upgrade")
+	gs.coins = 0
+	_check(not gs.upgrade_echo("grubsong"), "upgrading without coins must fail")
+	_check(gs.echo_level("grubsong") == 0, "a failed upgrade must not raise the level")
+
+	# --- families: three worn from one family sets its bonus off
+	gs.echoes_equipped.clear()
+	_check(gs.family_complete("song") == false, "no family is complete yet")
+	gs.echoes_equipped.assign(["hollow_note", "metronome", "grubsong"])
+	_check(gs.family_worn("song") == 3, "three song echoes are worn")
+	_check(gs.family_complete("song"), "the song family must be complete")
+	_check(not gs.family_complete("grave"), "the grave family must not be complete")
+	gs.echoes_equipped.assign(["hollow_note", "metronome", "candle_stub"])
+	_check(gs.family_complete("song") == false, "a split family must not be complete")
+	_check(gs.family_worn("grave") == 1, "the grave family counts its worn echoes")
+
 	# --- death wipes the map but keeps the echoes
 	gs.reset()
 	_check(gs.explored.is_empty(), "reset must clear the map")
 	_check(gs.has_echo("metronome"), "reset must keep owned echoes")
 	_check(gs.echo_on("metronome"), "reset must keep the equipped set")
+	_check(gs.echo_level("metronome") == 2, "reset must keep echo levels")
 
 	if _fails.is_empty():
 		print("RESULT: OK")
