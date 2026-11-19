@@ -69,6 +69,8 @@ var _judged: Array = []
 var _notes: Array = []
 var _dmg_dealt := 0
 var _hits := 0
+## Hits landed in this section, for the Metronome echo's first-note window.
+var _phase_hits := 0
 var _misses := 0
 var _feints := 0
 var _total_hits := 0
@@ -648,6 +650,7 @@ func _enter_phase(p: int) -> void:
 		_judged.append(false)
 	_dmg_dealt = 0
 	_hits = 0
+	_phase_hits = 0
 	_misses = 0
 	_feints = 0
 	_clear_hold()
@@ -806,7 +809,9 @@ func _input(event: InputEvent) -> void:
 			var bar: float = float(_pattern[_hold_note]["hold"]) * _beat_sec
 			var held: float = _phase_time - _note_time(_hold_note)
 			# Sustained most of the bar (or let go right at the tail): done.
-			if tail_gap(_hold_note) > 0.12 and held < bar * 0.6:
+			# Hollow Note drops the required sustain to a third.
+			var need := 0.25 if GameState.echo_on("hollow_note") else 0.6
+			if tail_gap(_hold_note) > 0.12 and held < bar * need:
 				_break_hold()
 			return
 	if event.is_action_pressed("ui_accept"):
@@ -821,19 +826,24 @@ func tail_gap(i: int) -> float:
 
 func _try_hit(lane: int, key: int = 0) -> void:
 	# Only notes of the pressed lane that sit inside the timing window count.
+	# Metronome widens the window for the first note of each section.
+	var win := WINDOW
+	if GameState.echo_on("metronome") and _phase_hits == 0:
+		win *= 1.4
 	var best := -1
 	var best_dt := 999.0
 	for i in _pattern.size():
 		if _judged[i] or int(_pattern[i]["type"]) != lane:
 			continue
 		var dt := absf(_phase_time - _note_time(i))
-		if dt <= WINDOW and dt < best_dt:
+		if dt <= win and dt < best_dt:
 			best = i
 			best_dt = dt
 	if best < 0:
 		return
 
 	_judged[best] = true
+	_phase_hits += 1
 	if lane == ATTACK:
 		var dmg := 1
 		_hits += 1

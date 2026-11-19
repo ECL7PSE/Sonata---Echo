@@ -520,4 +520,9 @@ func take_damage(amount: int, source_position: Vector2) -> bool:
 	var applied := super.take_damage(amount, source_position)
 	if applied:
 		_sfx("player_hurt")
+		# Grubsong: pain pays. Looked up through /root so this script still
+		# compiles in --script tools, which have no autoload identifiers.
+		var state := get_node_or_null("/root/GameState")
+		if state != null and state.call("echo_on", "grubsong"):
+			state.call("add_coins", 3)
 	return applied

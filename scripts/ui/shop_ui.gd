@@ -1,27 +1,22 @@
 extends CanvasLayer
-## Coin shop overlay, built entirely in code.
+## Echo shop overlay, built entirely in code.
 ##
-## A CanvasLayer so it draws over whatever scene is running, and hidden by
-## default - it appears only when something calls open(). The gothic frame is
-## drawn by gothic_ui.gd, so no sprite sheet is involved.
+## Sells relics, not stat boosts: each echo bends one rule of the game. Bought
+## echoes go straight into a free slot; a worn echo can be taken off again to
+## make room. A CanvasLayer so it draws over the bench panel that opens it.
 
 signal closed
 
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
 
 const PANEL_W := 760.0
-const PANEL_H := 420.0
-const ROW_H := 44.0
-const BUTTON_W := 120.0
-
-## key, label, cost at level 0, and the row's top y.
-const ROWS := [
-	{"key": "hp", "name": "HEALTH", "base": 25, "y": 150.0},
-	{"key": "atk", "name": "ATTACK", "base": 40, "y": 225.0},
-	{"key": "spd", "name": "SPEED", "base": 30, "y": 300.0},
-]
+const PANEL_H := 560.0
+const ROW_STEP := 62.0
+const ROW_H := 46.0
+const BUTTON_W := 150.0
 
 var _coins: Label
+var _slots: Label
 var _rows: Array[Dictionary] = []
 
 
@@ -30,7 +25,8 @@ func _ready() -> void:
 	layer = 33
 	visible = false
 	_build()
-	GameState.coins_changed.connect(_on_coins_changed)
+	GameState.coins_changed.connect(_on_changed)
+	GameState.echoes_changed.connect(_on_changed)
 
 
 ## Shows the shop and syncs every label to the current GameState.
@@ -66,13 +62,15 @@ func _build() -> void:
 
 	_add_title(panel)
 	_add_coins(panel)
-	for row in ROWS:
-		_add_row(panel, row)
+	var y := 128.0
+	for id in GameState.ECHOES:
+		_add_row(panel, id, y)
+		y += ROW_STEP
 	_add_close(panel)
 
 
 func _add_title(panel: Control) -> void:
-	var title := GothUI.label("SHOP", 32, GothUI.CYAN)
+	var title := GothUI.label("ECHOES", 32, GothUI.CYAN)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title.anchor_right = 1.0
@@ -106,40 +104,45 @@ func _add_coins(panel: Control) -> void:
 	_coins.offset_bottom = 60
 	panel.add_child(_coins)
 
+	_slots = GothUI.label("WORN 0/3", 16, GothUI.DIM)
+	_slots.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_slots.offset_left = 50
+	_slots.offset_right = 250
+	_slots.offset_top = 32
+	_slots.offset_bottom = 60
+	panel.add_child(_slots)
 
-func _add_row(panel: Control, row: Dictionary) -> void:
-	var y: float = row.y
 
-	var name_label := GothUI.label(row.name, 24, GothUI.TEXT)
+func _add_row(panel: Control, id: String, y: float) -> void:
+	var info: Dictionary = GameState.ECHOES[id]
+
+	var name_label := GothUI.label(str(info.name), 22, GothUI.TEXT)
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.offset_left = 90
-	name_label.offset_right = 330
+	name_label.offset_left = 50
+	name_label.offset_right = 460
 	name_label.offset_top = y
-	name_label.offset_bottom = y + ROW_H
+	name_label.offset_bottom = y + 26
 	panel.add_child(name_label)
 
-	var level_label := GothUI.label("LV 0/0", 16, GothUI.DIM)
-	level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	level_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	level_label.anchor_left = 0.5
-	level_label.anchor_right = 0.5
-	level_label.offset_left = -80
-	level_label.offset_right = 80
-	level_label.offset_top = y
-	level_label.offset_bottom = y + ROW_H
-	panel.add_child(level_label)
+	var desc := GothUI.label(str(info.desc), 13, GothUI.DIM)
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	desc.offset_left = 50
+	desc.offset_right = 560
+	desc.offset_top = y + 24
+	desc.offset_bottom = y + ROW_H
+	panel.add_child(desc)
 
-	var buy := GothUI.make_button("BUY", Vector2(BUTTON_W, ROW_H), 16)
+	var buy := GothUI.make_button("BUY", Vector2(BUTTON_W, ROW_H), 15)
 	buy.anchor_left = 1.0
 	buy.anchor_right = 1.0
-	buy.offset_left = -BUTTON_W - 90
-	buy.offset_right = -90
-	buy.offset_top = y
-	buy.offset_bottom = y + ROW_H
-	buy.pressed.connect(_on_buy.bind(row.key, row.base))
+	buy.offset_left = -BUTTON_W - 40
+	buy.offset_right = -40
+	buy.offset_top = y + 4
+	buy.offset_bottom = y + 4 + ROW_H
+	buy.pressed.connect(_on_press.bind(id))
 	panel.add_child(buy)
 
-	_rows.append({"key": row.key, "base": row.base, "level": level_label, "button": buy})
+	_rows.append({"id": id, "name": name_label, "button": buy})
 
 
 func _add_close(panel: Control) -> void:
@@ -154,28 +157,43 @@ func _add_close(panel: Control) -> void:
 	panel.add_child(btn)
 
 
-func _on_buy(key: String, base: int) -> void:
-	var level: int = GameState.get_upgrade(key)
-	if level >= GameState.UPGRADE_MAX:
-		return
-	var cost := base * (level + 1)
-	if not GameState.spend_coins(cost):
-		return
-	GameState.set_upgrade(key, level + 1)
+func _on_press(id: String) -> void:
+	if GameState.has_echo(id):
+		GameState.toggle_echo(id)
+	else:
+		GameState.buy_echo(id)
 	_refresh()
 
 
 func _refresh() -> void:
+	if _coins == null:
+		return
 	_coins.text = "COINS: %d" % GameState.coins
+	_slots.text = "WORN %d/%d" % [GameState.echoes_equipped.size(), GameState.ECHO_SLOTS]
 	for row in _rows:
-		var level: int = GameState.get_upgrade(row.key)
-		var maxed := level >= GameState.UPGRADE_MAX
-		row.level.text = "LV %d/%d" % [level, GameState.UPGRADE_MAX]
-		row.button.text = "MAX" if maxed else "BUY %d" % (int(row["base"]) * (level + 1))
-		row.button.disabled = maxed
+		var id: String = row.id
+		var own: bool = GameState.has_echo(id)
+		var worn: bool = GameState.echo_on(id)
+		var full: bool = GameState.echoes_equipped.size() >= GameState.ECHO_SLOTS
+		var button: Button = row.button
+		var name_label: Label = row.name
+		name_label.add_theme_color_override("font_color",
+			GothUI.CYAN if worn else GothUI.TEXT)
+		button.disabled = false
+		if not own:
+			var cost := GameState.echo_cost(id)
+			button.text = "BUY %d" % cost
+			button.disabled = GameState.coins < cost
+		elif worn:
+			button.text = "UNEQUIP"
+		elif full:
+			button.text = "FULL"
+			button.disabled = true
+		else:
+			button.text = "EQUIP"
 
 
-func _on_coins_changed(_current: int) -> void:
+func _on_changed(_value = null) -> void:
 	if not is_inside_tree():
 		return
 	_refresh()

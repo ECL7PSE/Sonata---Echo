@@ -18,6 +18,11 @@ func _ready() -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if body == null or not body.has_method("take_damage"):
 		return
+	# Through /root: this script is preloaded by the builder, and --script tools
+	# have no autoload identifiers at compile time.
+	var state := get_node_or_null("/root/GameState")
+	if state != null:
+		state.call("mark_explored", room_name)
 	var woke := 0
 	for enemy in _room_enemies():
 		if not enemy.active:
