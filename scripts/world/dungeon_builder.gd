@@ -486,6 +486,8 @@ const TP_FRAMES := 14
 
 var _grid: Array = []
 var _trap_frames: SpriteFrames
+## The door taken on the way down, read once in _ready().
+var _choice := ""
 func _ready() -> void:
 	# A run gets one seed; every floor derives its own from seed+depth, so
 	# descending reshuffles the spawn scatter and the head counts.
@@ -503,6 +505,12 @@ func _ready() -> void:
 	if state != null:
 		depth = int(state.get("depth"))
 	SPAWNER.set_floor(run_seed, depth)
+	# The door taken on the way down shapes this floor, then is cleared so it
+	# only ever applies to one descent.
+	if state != null:
+		_choice = str(state.get("floor_choice"))
+		state.set("coin_value", 2 if _choice == "combat" else 1)
+		state.set("floor_choice", "")
 
 	_grid = _build_grid()
 	var problems := _validate(_grid)
@@ -1414,6 +1422,9 @@ func _make_chest(cell: Vector2i) -> Area2D:
 	# The chest in the LAST room is a doorway, not a payout: opening it sends the
 	# player back to PlayerStart and respawns every enemy.
 	node.set("resets_the_run", _is_final_chest(cell))
+	# HOARD floors pay double at every chest.
+	if _choice == "hoard" and not _is_final_chest(cell):
+		node.set("coin_count", int(node.get("coin_count")) * 2)
 
 	var sprite := AnimatedSprite2D.new()
 	sprite.name = "Sprite"

@@ -80,7 +80,7 @@ func reset_run() -> void:
 	# know the mechanics of rebuilding the floor.
 	var tree := get_tree()
 	if tree != null:
-		RunReset.descend(tree)
+		RunReset.offer(tree)
 
 func interact_pillar(pillar: Node2D) -> void:
 	# The pillar is a neutral marker; the player interacts with it via [E].

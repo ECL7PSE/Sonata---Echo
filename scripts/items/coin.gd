@@ -160,7 +160,8 @@ func _collect(_body: Node2D) -> void:
 	_taken = true
 	var state := _game_state()
 	if state != null:
-		state.add_coins(1)
+		# COMBAT floors make every coin worth double.
+		state.add_coins(maxi(1, int(state.get("coin_value"))))
 	# One per pickup. The manager caps a burst of these at 3 so a coin shower
 	# stays a rattle rather than a wall of noise.
 	_sfx("coin_collect")

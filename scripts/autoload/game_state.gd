@@ -11,6 +11,13 @@ signal upgrades_changed(upgrades: Dictionary)
 
 ## How many coins the player is carrying. Coins are deliberately KEPT across death.
 var coins := 0
+## Which door was taken on the way down: "", "combat", "hoard" or "rest".
+## The next floor reads it and clears it again.
+var floor_choice := ""
+## What a single coin is worth this floor.
+var coin_value := 1
+## Set by the REST door: the next floor saves the run on arrival.
+var pending_save := false
 ## Set once the first-run prompts have finished, so they never repeat.
 var tutorial_done := false
 
@@ -163,4 +170,7 @@ func reset() -> void:
 	depth = 1
 	run_seed = 0
 	explored.clear()
+	floor_choice = ""
+	coin_value = 1
+	pending_save = false
 	coins_changed.emit(coins)

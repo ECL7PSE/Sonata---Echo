@@ -38,10 +38,25 @@ func _process(_delta: float) -> void:
 	_ensure_map()
 	_ensure_tutorial()
 	_ensure_shade()
+	_ensure_pending_save()
 	if _bench != null and is_instance_valid(_bench) and _hooked_player != null \
 			and is_instance_valid(_hooked_player) and _applied_scene != "":
 		return
 	_maybe_spawn_bench()
+
+
+## The REST door lands you on a floor that has already saved the run.
+func _ensure_pending_save() -> void:
+	if not GameState.pending_save or not is_inside_tree():
+		return
+	var cs := get_tree().current_scene
+	if cs == null:
+		return
+	var p := _find_player(cs)
+	if p == null:
+		return
+	GameState.pending_save = false
+	save_run(p)
 
 
 var _shade: Node = null

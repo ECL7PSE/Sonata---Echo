@@ -28,6 +28,14 @@ static func reset(tree: SceneTree) -> void:
 	print("run reset      : back to PlayerStart, enemies respawned")
 
 
+## Floor complete: offer the three doors. Picking one calls descend().
+static func offer(tree: SceneTree) -> void:
+	if tree == null or tree.current_scene == null:
+		return
+	var doors = load("res://scripts/ui/doors.gd").new()
+	tree.current_scene.add_child(doors)
+
+
 ## Floor complete: drop one floor deeper.
 ##
 ## The next floor is rebuilt from GameState.run_seed + depth, so it is a new

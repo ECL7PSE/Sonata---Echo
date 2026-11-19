@@ -79,7 +79,7 @@ func _on_area_entered(area: Area2D) -> void:
 func _spawn_coins() -> void:
 	if resets_the_run:
 		# The last chest is a doorway, not a payout: it drops you a floor deeper.
-		preload("res://scripts/core/run_reset.gd").descend(get_tree())
+		preload("res://scripts/core/run_reset.gd").offer(get_tree())
 		return
 	var parent := get_parent()
 	if parent == null:
