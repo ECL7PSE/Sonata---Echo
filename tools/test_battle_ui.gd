@@ -22,29 +22,33 @@ func _initialize() -> void:
 		if n is Label:
 			labels[str(n.text)] = n
 
-	for name in ["ATTACK", "REST", "FEINT"]:
+	for name in ["fight", "rest", "feint"]:
 		if not labels.has(name):
 			problems.append("missing lane label " + name)
 		else:
 			var ly: float = labels[name].position.y
 			if ly < 506.0:
 				problems.append("lane label %s at y=%.0f overlaps the track" % [name, ly])
+			if ly + labels[name].size.y > 648.0:
+				problems.append("lane label %s falls off the screen" % name)
 
 	if b._beat_dots.size() != 4:
 		problems.append("expected 4 beat dots, got %d" % b._beat_dots.size())
 	if b._lane_glow.size() != 3:
 		problems.append("expected 3 lane glows, got %d" % b._lane_glow.size())
-	if b._pbar_fills.size() != 5:
-		problems.append("expected 5 player bar fills, got %d" % b._pbar_fills.size())
-	if b._ebar_fills.size() != 5:
-		problems.append("expected 5 enemy bar fills, got %d" % b._ebar_fills.size())
+	if b._pbar_fill == null or b._pbar_fill.texture == null:
+		problems.append("player health bar has no fill texture")
+	if b._ebar_fill == null or b._ebar_fill.texture == null:
+		problems.append("enemy health bar has no fill texture")
+	if b._turn_layer == null or b._turn_layer.get_child_count() == 0:
+		problems.append("turn banner has no artwork")
+	if b._turn_layer != null and b._turn_layer.visible:
+		problems.append("turn banner should start hidden")
 
-	# the "RHYTHM DUEL" caption was removed on request; the phase label now
-	# lives directly under the turn rings at the top instead.
-	if b._phase_label.offset_top > 120:
-		problems.append("phase label drifted away from the turn rings: y=%d" % b._phase_label.offset_top)
+	# the small top phase label was replaced by a centred fade-in banner; the
+	# sparkle pips still sit at the top of the screen.
 	if b._beat_dots.size() > 0 and b._beat_dots[0].position.y > 60:
-		problems.append("turn rings not at the top: y=%.0f" % b._beat_dots[0].position.y)
+		problems.append("turn pips not at the top: y=%.0f" % b._beat_dots[0].position.y)
 
 	for key in ["rat", "slime", "bat", "mushroom", "flying_eye", "goblin", "mimic", "skeleton"]:
 		var path := "res://audio/battle/%s.wav" % key

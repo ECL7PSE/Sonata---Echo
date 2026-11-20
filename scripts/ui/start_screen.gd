@@ -7,23 +7,21 @@ extends CanvasLayer
 
 const MAIN_SCENE := "res://scenes/Main.tscn"
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
+const CanvaUI := preload("res://scripts/ui/canva_ui.gd")
 
-const ART_DIR := "res://Assets/UI/start_screen/"
+const ART_DIR := CanvaUI.ART_DIR
 
 ## On-screen width of each image in game pixels (1152x648 space). Height
 ## follows the image's own aspect ratio, so this works whatever size the PNGs
 ## were exported at. Taken from the Canva design (1920 wide) x 0.6.
-const SKULL_W := 179.0
+const SKULL_W := CanvaUI.SKULL_W
 const TITLE_W := 275.0
 const CORNER_W := 80.0
 
 # --- colours taken from the Canva design
-const BG_COLOR := Color("#131a2c")
-const MAROON := Color("#652545")
+const BG_COLOR := CanvaUI.BG_COLOR
+const MAROON := CanvaUI.MAROON
 const FRAME_COLOR := MAROON
-const BTN_FILL := MAROON
-const BTN_FILL_HOVER := Color("#7d2f58")
-const TEAL := Color("#4fead1")
 
 const MENU_W := 222.0
 const MENU_H := 54.0
@@ -79,19 +77,19 @@ func _build_menu() -> void:
 	root.add_child(frame)
 
 	# Corner flourishes: one image, mirrored for the other three corners.
-	var corner_tex := _crop(load(ART_DIR + "corner.png") as Texture2D)
+	var corner_tex := CanvaUI.crop(load(ART_DIR + "corner.png") as Texture2D)
 	for c in [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]:
 		var corner := _corner(corner_tex, c[0], c[1])
 		root.add_child(corner)
 		reveal.append(corner)
 
 	# Skull with music notes, sitting on the top edge of the frame.
-	var skull := _centered_tex(ART_DIR + "skull.png", 5.0, SKULL_W)
+	var skull := CanvaUI.centered_tex(ART_DIR + "skull.png", 5.0, SKULL_W)
 	root.add_child(skull)
 	reveal.append(skull)
 
 	# "Echo" title image.
-	var title := _centered_tex(ART_DIR + "title.png", 84.0, TITLE_W)
+	var title := CanvaUI.centered_tex(ART_DIR + "title.png", 84.0, TITLE_W)
 	root.add_child(title)
 	reveal.append(title)
 
@@ -130,7 +128,7 @@ func _corner(tex: Texture2D, ax: float, ay: float) -> TextureRect:
 	t.stretch_mode = TextureRect.STRETCH_SCALE
 	t.flip_h = ax == 1.0
 	t.flip_v = ay == 1.0
-	var s := _fit(tex, CORNER_W)
+	var s := CanvaUI.fit(tex, CORNER_W)
 	t.anchor_left = ax
 	t.anchor_right = ax
 	t.anchor_top = ay
@@ -140,61 +138,6 @@ func _corner(tex: Texture2D, ax: float, ay: float) -> TextureRect:
 	t.offset_top = CORNER_INSET.y if ay == 0.0 else -CORNER_INSET.y - s.y
 	t.offset_bottom = t.offset_top + s.y
 	return t
-
-
-## An image centred horizontally, `top` pixels from the top of the screen.
-## Trims transparent padding off a PNG (Canva exports often keep a big empty
-## margin), so the width constants above refer to the visible artwork only.
-func _crop(tex: Texture2D) -> Texture2D:
-	var img := tex.get_image()
-	if img == null:
-		return tex
-	var used := img.get_used_rect()
-	if used.size.x <= 0 or used.size.y <= 0:
-		return tex
-	var atlas := AtlasTexture.new()
-	atlas.atlas = tex
-	atlas.region = Rect2(used)
-	return atlas
-
-
-func _fit(tex: Texture2D, width: float) -> Vector2:
-	return Vector2(width, width * tex.get_height() / tex.get_width())
-
-
-func _centered_tex(path: String, top: float, width: float) -> TextureRect:
-	var tex := _crop(load(path) as Texture2D)
-	var t := TextureRect.new()
-	t.texture = tex
-	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	t.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	t.stretch_mode = TextureRect.STRETCH_SCALE
-	var s := _fit(tex, width)
-	t.anchor_left = 0.5
-	t.anchor_right = 0.5
-	t.offset_left = -s.x * 0.5
-	t.offset_right = s.x * 0.5
-	t.offset_top = top
-	t.offset_bottom = top + s.y
-	return t
-
-
-## Restyles a menu button to match the Canva design (maroon plate, black
-## outline, teal text). Only affects the start screen, not other menus.
-func _skin_button(b: Button) -> void:
-	for state in ["normal", "hover", "pressed"]:
-		var s := StyleBoxFlat.new()
-		s.bg_color = BTN_FILL_HOVER if state == "hover" else BTN_FILL
-		s.border_color = Color.BLACK
-		s.set_border_width_all(3)
-		s.set_corner_radius_all(8)
-		s.anti_aliasing = false
-		b.add_theme_stylebox_override(state, s)
-	b.add_theme_color_override("font_color", TEAL)
-	b.add_theme_color_override("font_hover_color", Color.WHITE)
-	b.add_theme_color_override("font_pressed_color", Color.WHITE)
-	b.add_theme_color_override("font_focus_color", TEAL)
 
 
 ## Fades the title block in, then the rows, for a calm entrance.
@@ -211,7 +154,7 @@ func _stagger(nodes: Array[Control]) -> void:
 func _add_button(box: VBoxContainer, text: String, action: String,
 		reveal: Array[Control]) -> void:
 	var b := GothUI.make_button(text, Vector2(MENU_W, MENU_H), BUTTON_FONT_SIZE)
-	_skin_button(b)
+	CanvaUI.skin_button(b)
 	b.pressed.connect(_on_menu.bind(action))
 	box.add_child(b)
 	_buttons.append(b)
@@ -313,63 +256,39 @@ func _build_help(root: Control) -> void:
 
 func _build_settings(root: Control) -> void:
 	_settings = _overlay(root)
-	var panel := _panel(_settings)
+	var panel := CanvaUI.modal_panel(_settings, Vector2(760.0, 378.0))
 
-	var heading := GothUI.label("SETTINGS", 32, GothUI.CYAN)
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.anchor_right = 1.0
-	heading.offset_top = 36
-	heading.offset_bottom = 88
-	panel.add_child(heading)
+	CanvaUI.skull_banner(panel)
 
-	var rule := GothUI.ornament(GothUI.ORN_DIVIDER, GothUI.BORDER, GothUI.CRIMSON)
-	rule.anchor_right = 1.0
-	rule.anchor_top = 0.0
-	rule.anchor_bottom = 0.0
-	rule.offset_left = 120
-	rule.offset_right = -120
-	rule.offset_top = 92
-	rule.offset_bottom = 110
-	panel.add_child(rule)
+	# "Settings" uses settings_title.png (the serif pixel lettering from the
+	# design) and falls back to the game font if the file is not there.
+	CanvaUI.heading(panel, ART_DIR + "settings_title.png", "Settings", 50.0,
+			52.0, 36)
 
-	_add_slider_row(panel, "MUSIC", 128, "Music")
-	_add_slider_row(panel, "SOUND", 180, "SFX")
+	CanvaUI.slider_row(panel, "music", 156.0, _bus_linear("Music"),
+			_set_bus.bind("Music"))
+	CanvaUI.slider_row(panel, "sound", 205.0, _bus_linear("SFX"),
+			_set_bus.bind("SFX"))
 
-	_fullscreen_btn = GothUI.make_button("FULLSCREEN", Vector2(420.0, 48.0), 16)
+	_fullscreen_btn = GothUI.make_button("full screen", Vector2(342.0, 49.0), 20)
+	CanvaUI.skin_button(_fullscreen_btn)
 	_fullscreen_btn.anchor_left = 0.5
 	_fullscreen_btn.anchor_right = 0.5
-	_fullscreen_btn.offset_left = -210
-	_fullscreen_btn.offset_right = 210
-	_fullscreen_btn.offset_top = 240
-	_fullscreen_btn.offset_bottom = 288
+	_fullscreen_btn.offset_left = -171.0
+	_fullscreen_btn.offset_right = 171.0
+	_fullscreen_btn.offset_top = 246.0
+	_fullscreen_btn.offset_bottom = 295.0
 	_fullscreen_btn.pressed.connect(_toggle_fullscreen)
 	panel.add_child(_fullscreen_btn)
 
-	_add_close(panel, _close_settings)
-
-
-func _add_slider_row(panel: Control, text: String, y: float, bus: String) -> void:
-	var label := GothUI.label(text, 16, GothUI.TEXT)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.offset_left = 70
-	label.offset_right = 250
-	label.offset_top = y
-	label.offset_bottom = y + 38
-	panel.add_child(label)
-
-	var slider := HSlider.new()
-	slider.min_value = 0.0
-	slider.max_value = 1.0
-	slider.step = 0.05
-	slider.value = _bus_linear(bus)
-	slider.offset_left = 270
-	slider.offset_right = 650
-	slider.offset_top = y + 6
-	slider.offset_bottom = y + 32
-	GothUI.style_slider(slider)
-	slider.value_changed.connect(_set_bus.bind(bus))
-	panel.add_child(slider)
+	var x_button := CanvaUI.plain_close(40.0, _close_settings)
+	x_button.anchor_left = 1.0
+	x_button.anchor_right = 1.0
+	x_button.offset_left = -65.0
+	x_button.offset_right = -25.0
+	x_button.offset_top = 26.0
+	x_button.offset_bottom = 66.0
+	panel.add_child(x_button)
 
 
 func _bus_linear(bus: String) -> float:
@@ -387,16 +306,16 @@ func _toggle_fullscreen() -> void:
 	var want := not Settings.fullscreen
 	var ok := Settings.set_fullscreen(want)
 	_sync_settings()
-	if not ok:
-		# Embedded game view: the OS window belongs to the editor, so it cannot
-		# go fullscreen. Say so instead of leaving a dead button.
-		_fullscreen_btn.text = "FULLSCREEN NEEDS ITS OWN WINDOW"
+	# Toggle the label even if the OS refused the resize (the editor's embedded
+	# game view cannot own its window); the tooltip explains the limit.
+	_fullscreen_btn.tooltip_text = "" if ok else \
+		"Fullscreen is unavailable in the editor preview. Run the game in its own window."
 
 
 func _sync_settings() -> void:
 	if _fullscreen_btn == null:
 		return
-	_fullscreen_btn.text = "FULLSCREEN: ON" if Settings.fullscreen else "FULLSCREEN: OFF"
+	_fullscreen_btn.text = "full screen: on" if Settings.fullscreen else "full screen: off"
 
 
 func _overlay(root: Control) -> Control:
