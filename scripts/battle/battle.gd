@@ -9,13 +9,10 @@ extends CanvasLayer
 
 signal finished
 
-const SHEET := preload("res://Assets/UI/gothic_ui_sheet_alpha.png")
 const PIXEL_FONT := preload("res://Assets/UI/pixel_ui/font/pixel_ui_font.fnt")
-const LANE_SYMBOL := preload("res://scripts/ui/lane_symbol.gd")
-const GothUI := preload("res://scripts/ui/gothic_ui.gd")
-const R_SMALL_SKULL := Rect2(213, 1309, 28, 32)
-const R_ORB_LIGHT := Rect2(245, 1283, 84, 87)
-const R_ORB_DARK := Rect2(24, 1283, 85, 87)
+const CENTER_WIPE := preload("res://scripts/battle/center_wipe.gdshader")
+const ART_DIR := "res://Assets/UI/battle/"
+const HP_DIR := "res://Assets/UI/Health_Bar/"
 
 const ATTACK := 0
 const IDLE := 1
@@ -30,20 +27,27 @@ const JUDGE_Y := 506.0
 const NOTE_SIZE := 64.0
 const LANE_CENTER := [436.0, 576.0, 716.0]
 const LEAD := 3.0
+## How long the YOUR TURN splash stays on screen, fade-in and fade-out included.
+const TURN_BANNER_SEC := 2.0
+const TURN_FADE_IN := 0.3
+const TURN_FADE_OUT := 0.45
+## How long the rule takes to wipe outwards from its centre.
+const TURN_RULE_WIPE := 0.55
 const SPEED := 430.0
 const BEAT_DOTS := 4
 const WINDOW := 0.24
 const PERFECT := 0.10
-# Duel HP bars: a code-drawn segmented groove, same slot grid as the HUD.
-const DUEL_BAR_W := 260.0
-const DUEL_BAR_H := 48.0
-const DUEL_X0 := 14.0
-const DUEL_Y0 := 10.0
-const DUEL_SLOT_W := 40.0
-const DUEL_SLOT_H := 28.0
-const DUEL_PITCH := 48.0
-const ROW_COLORS := [Color("#ff5a5a"), Color("#c9c9d4"), Color("#b07bff")]
-const CYAN := Color("#7cf6ff")
+# Duel HP bars: a red pill fill, with the skull frame laid over the player side.
+const BAR_W := 290.0
+const BAR_H := 24.0
+const BAR_X := 48.0
+const BAR_Y := 86.0
+const BAR_FRAME_W := 320.0
+const ROW_NAMES := ["fight", "rest", "feint"]
+const ROW_COLORS := [Color("#d42434"), Color("#f2eef7"), Color("#9a6cf0")]
+const RED := Color("#d42434")
+const TEAL := Color("#4fead1")
+const CYAN := Color("#4fead1")
 # Judgement SFX: one hit thud per lane, a perfect sparkle, and a dull miss.
 const SFX_HIT := ["res://audio/sfx/hit_attack.wav", "res://audio/sfx/hit_rest.wav", "res://audio/sfx/hit_feint.wav"]
 const SFX_PERFECT := "res://audio/sfx/perfect.wav"
@@ -62,6 +66,7 @@ var _phase: int = P.OFF
 var _phase_time := 0.0
 var _round := 0
 var _beat_sec := 0.5
+var _lead := LEAD
 var _pattern: Array = []
 var _judged: Array = []
 var _notes: Array = []
@@ -75,7 +80,6 @@ var _total_hits := 0
 var _total_misses := 0
 var _total_feints := 0
 var _penalty := 1
-var _phase_label: Label
 var _feedback: Label
 ## One-time how-to line, only during the first section.
 var _howto: Label
@@ -83,25 +87,29 @@ var _combo_label: Label
 var _hit_line: ColorRect
 var _hit_glow: ColorRect
 var _enemy_name: Label
-var _ebar_fills: Array[ColorRect] = []
-var _ebar_base_w := 0.0
-var _pbar_fills: Array[ColorRect] = []
-var _pbar_base_w := 0.0
+var _pbar_fill: TextureRect
+var _ebar_fill: TextureRect
+var _turn_layer: Control
+var _turn_dim: ColorRect
+var _turn_tween: Tween
+var _turn_rule_mat: ShaderMaterial
 var _hud: Node
 var _music: AudioStreamPlayer
 var _sfx: Array[AudioStreamPlayer] = []
 var _sfx_cache: Dictionary = {}
 var _player_portrait: Node2D
 var _enemy_portrait: Node2D
-var _beat_dots: Array[Panel] = []
+var _beat_dots: Array[Control] = []
 var _lane_glow: Array[ColorRect] = []
 var _bob := 0.0
 var _combo := 0
 var _turn_last := -1
-var _p_target := 5.0
-var _p_show := 5.0
-var _e_target := 5.0
-var _e_show := 5.0
+var _p_target := 1.0
+var _p_show := 1.0
+var _e_target := 1.0
+var _e_show := 1.0
+var _art_cache: Dictionary = {}
+var _pip_tex: Array[Texture2D] = []
 # Active long note: which note/lane is being held and the damage its press awarded.
 var _hold_note := -1
 ## Physical key that started the hold, so its release is detected even for the
@@ -187,11 +195,84 @@ func _bpm_for(enemy: Node) -> float:
 	return clampf(84.0 + sp * 0.36, 96.0, 150.0)
 
 
-func _region(r: Rect2) -> AtlasTexture:
-	var t := AtlasTexture.new()
-	t.atlas = SHEET
-	t.region = r
-	return t
+## Crops the transparent export margin off a Canva PNG and caches the result.
+func _art(file_name: String, dir := ART_DIR) -> Texture2D:
+	var key := dir + file_name
+	if _art_cache.has(key):
+		return _art_cache[key]
+	var tex: Texture2D = load(key)
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null:
+		return tex
+	var used := img.get_used_rect()
+	if used.size.x <= 0 or used.size.y <= 0:
+		return tex
+	var atlas := AtlasTexture.new()
+	atlas.atlas = tex
+	atlas.region = Rect2(used)
+	_art_cache[key] = atlas
+	return atlas
+
+
+## The white serif letter inside a keycap export, with the thin red frame
+## trimmed away (the frame is drawn in code so it stays crisp at HUD scale).
+func _key_letter(file_name: String) -> Texture2D:
+	var key := "key:" + file_name
+	if _art_cache.has(key):
+		return _art_cache[key]
+	var tex: Texture2D = load(ART_DIR + file_name)
+	if tex == null:
+		return null
+	var img := tex.get_image()
+	if img == null:
+		return tex
+	var used := img.get_used_rect()
+	var art := img.get_region(used)
+	var inset := maxi(2, int(minf(art.get_width(), art.get_height()) * 0.06))
+	var inner := art.get_region(Rect2i(inset, inset,
+			art.get_width() - inset * 2, art.get_height() - inset * 2))
+	var letter := inner.get_used_rect()
+	var atlas := AtlasTexture.new()
+	atlas.atlas = tex
+	atlas.region = Rect2(used.position + Vector2i(inset, inset) + letter.position,
+			letter.size)
+	_art_cache[key] = atlas
+	return atlas
+
+
+## turn_pip.png holds all four sparkles in one strip; slice them apart.
+func _make_pips() -> void:
+	if not _pip_tex.is_empty():
+		return
+	var tex: Texture2D = load(ART_DIR + "turn_pip.png")
+	if tex == null:
+		return
+	var img := tex.get_image()
+	if img == null:
+		return
+	var used := img.get_used_rect()
+	var art := img.get_region(used)
+	for i in BEAT_DOTS:
+		var x0 := int(float(art.get_width()) * i / BEAT_DOTS)
+		var x1 := int(float(art.get_width()) * (i + 1) / BEAT_DOTS)
+		var part := art.get_region(Rect2i(x0, 0, x1 - x0, art.get_height()))
+		var u := part.get_used_rect()
+		var atlas := AtlasTexture.new()
+		atlas.atlas = tex
+		atlas.region = Rect2(used.position + Vector2i(x0, 0) + u.position, u.size)
+		_pip_tex.append(atlas)
+
+
+func _note_tex(kind: int) -> Texture2D:
+	match kind:
+		ATTACK:
+			return _art("note_fight.png")
+		FEINT:
+			return _art("note_feint.png")
+		_:
+			return _art("note_rest.png")
 
 
 func _label(text: String, size: int, color: Color) -> Label:
@@ -227,91 +308,130 @@ func _build() -> void:
 	_build_hud()
 	_build_enemy_bar()
 	_build_player_bar()
+	_build_turn_overlay()
 
 
 func _build_highway() -> void:
 	var frame := Panel.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#0d0a14")
-	style.border_color = Color("#6f1420")
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(8)
+	style.bg_color = Color(0.02, 0.03, 0.06, 0.55)
+	style.border_color = TEAL
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(0)
 	frame.add_theme_stylebox_override("panel", style)
-	frame.position = Vector2(TRACK_X - 12, TRACK_TOP - 12)
-	frame.size = Vector2(TRACK_W + 24, JUDGE_Y - TRACK_TOP + 140)
+	frame.position = Vector2(TRACK_X - 10, TRACK_TOP - 10)
+	frame.size = Vector2(TRACK_W + 20, JUDGE_Y + 94 - (TRACK_TOP - 10))
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(frame)
 
-	# lane tint + press glow
+	var lane_h := JUDGE_Y - TRACK_TOP
 	for i in 3:
 		var lane_x := TRACK_X + i * LANE_W
-		var tint := ColorRect.new()
-		tint.color = Color(ROW_COLORS[i], 0.06)
-		tint.position = Vector2(lane_x, TRACK_TOP)
-		tint.size = Vector2(LANE_W, JUDGE_Y - TRACK_TOP)
-		tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_root.add_child(tint)
-
 		var glow := ColorRect.new()
 		glow.color = Color(ROW_COLORS[i], 0.0)
-		glow.position = tint.position
-		glow.size = tint.size
+		glow.position = Vector2(lane_x, TRACK_TOP)
+		glow.size = Vector2(LANE_W, lane_h)
 		glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_root.add_child(glow)
 		_lane_glow.append(glow)
 
 		if i > 0:
 			var div := ColorRect.new()
-			div.color = Color("#2a2233")
+			div.color = Color(TEAL, 0.55)
 			div.position = Vector2(lane_x, TRACK_TOP)
-			div.size = Vector2(2, JUDGE_Y - TRACK_TOP)
+			div.size = Vector2(1, lane_h)
 			div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_root.add_child(div)
 
+		var name_lbl := _label(ROW_NAMES[i], 16, ROW_COLORS[i])
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.position = Vector2(LANE_CENTER[i] - 70, JUDGE_Y + 62)
+		name_lbl.size = Vector2(140, 24)
+		name_lbl.z_index = 5
+		_root.add_child(name_lbl)
+
+	# winged skull crest straddling the highway's top edge, sitting just above
+	# the border and small enough to clear the turn pips
+	var crest := _art("duel_crest.png")
+	if crest != null:
+		var cw := 230.0
+		var ch := cw * crest.get_height() / crest.get_width()
+		var c := TextureRect.new()
+		c.texture = crest
+		c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		c.stretch_mode = TextureRect.STRETCH_SCALE
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.position = Vector2(576.0 - cw * 0.5, (TRACK_TOP - 10.0) - 5.0 - ch * 0.5)
+		c.size = Vector2(cw, ch)
+		_root.add_child(c)
+
 	_hit_glow = ColorRect.new()
-	_hit_glow.color = Color(CYAN, 0.22)
-	_hit_glow.position = Vector2(TRACK_X, JUDGE_Y - 14)
-	_hit_glow.size = Vector2(TRACK_W, 28)
+	_hit_glow.color = Color(TEAL, 0.13)
+	_hit_glow.position = Vector2(TRACK_X, JUDGE_Y - 10)
+	_hit_glow.size = Vector2(TRACK_W, 20)
 	_hit_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_hit_glow)
 
 	_hit_line = ColorRect.new()
-	_hit_line.color = CYAN
-	_hit_line.position = Vector2(TRACK_X, JUDGE_Y - 2)
-	_hit_line.size = Vector2(TRACK_W, 4)
+	_hit_line.color = TEAL
+	_hit_line.position = Vector2(TRACK_X, JUDGE_Y - 1)
+	_hit_line.size = Vector2(TRACK_W, 2)
 	_hit_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_hit_line)
 
-	# turn indicator: hollow rings, centered over the highway
-	var dot_w := 18.0
-	var dot_gap := 10.0
+	# turn pips: four sparkles from the uploaded strip
+	_make_pips()
+	var dot_w := 28.0
+	var dot_h := 44.0
+	var dot_gap := 24.0
 	var total := float(BEAT_DOTS) * dot_w + float(BEAT_DOTS - 1) * dot_gap
-	for i in BEAT_DOTS:
-		var d := GothUI.turn_dot(dot_w)
-		d.position = Vector2(576.0 - total * 0.5 + float(i) * (dot_w + dot_gap), 30.0)
-		d.modulate = Color(0.35, 0.35, 0.42)
+	for i in _pip_tex.size():
+		var d := TextureRect.new()
+		d.texture = _pip_tex[i]
+		d.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		d.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		d.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		d.position = Vector2(576.0 - total * 0.5 + float(i) * (dot_w + dot_gap), 14.0)
+		d.size = Vector2(dot_w, dot_h)
+		d.pivot_offset = d.size * 0.5
+		d.modulate = Color(1, 1, 1, 0.85)
+		d.z_index = 5
 		_root.add_child(d)
 		_beat_dots.append(d)
 
 	# judgement keys, one under each lane
-	var keys := ["F", "G", "H"]
+	var keys := ["keycap_f.png", "keycap_g.png", "keycap_h.png"]
 	for i in 3:
-		var cap := GothUI.keycap(keys[i], 44.0)
-		cap.position = Vector2(LANE_CENTER[i] - 22.0, JUDGE_Y + 8.0)
+		var cap := Control.new()
+		cap.position = Vector2(LANE_CENTER[i] - 31.0, JUDGE_Y + 8.0)
+		cap.size = Vector2(62.0, 50.0)
+		cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cap.z_index = 5
+		var plate := Panel.new()
+		plate.size = cap.size
+		plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ps := StyleBoxFlat.new()
+		ps.bg_color = Color("#131a2c")
+		ps.border_color = RED
+		ps.set_border_width_all(2)
+		ps.anti_aliasing = false
+		plate.add_theme_stylebox_override("panel", ps)
+		cap.add_child(plate)
+		var letter := TextureRect.new()
+		letter.texture = _key_letter(keys[i])
+		letter.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		letter.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		letter.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		letter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		letter.position = Vector2(16.0, 10.0)
+		letter.size = Vector2(30.0, 30.0)
+		cap.add_child(letter)
 		_root.add_child(cap)
 
 
 func _build_hud() -> void:
-	_phase_label = _label("", 16, Color("#c9b7d4"))
-	_phase_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_phase_label.anchor_right = 1.0
-	_phase_label.offset_top = 66
-	_phase_label.offset_bottom = 98
-	_phase_label.z_index = 5
-	_root.add_child(_phase_label)
-
-	_feedback = _label("", 32, CYAN)
+	_feedback = _label("", 32, TEAL)
 	_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_feedback.anchor_right = 1.0
 	_feedback.offset_top = 404
@@ -327,24 +447,24 @@ func _build_hud() -> void:
 	_howto.visible = false
 	_root.add_child(_howto)
 
-	var you := _label("YOU", 16, Color("#8fe7ff"))
-	you.offset_left = 20
-	you.offset_right = 280
-	you.offset_top = 12
-	you.offset_bottom = 38
+	var you := _label("YOU", 16, Color("#f2eef7"))
+	you.offset_left = BAR_X
+	you.offset_right = BAR_X + BAR_W
+	you.offset_top = 42
+	you.offset_bottom = 66
 	_root.add_child(you)
 
-	_enemy_name = _label("DUEL", 16, Color("#ff8a8a"))
+	_enemy_name = _label("ENEMY", 16, RED)
 	_enemy_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_enemy_name.anchor_left = 1.0
 	_enemy_name.anchor_right = 1.0
-	_enemy_name.offset_left = -280
-	_enemy_name.offset_right = -20
-	_enemy_name.offset_top = 12
-	_enemy_name.offset_bottom = 38
+	_enemy_name.offset_left = -BAR_X - BAR_W
+	_enemy_name.offset_right = -BAR_X
+	_enemy_name.offset_top = 42
+	_enemy_name.offset_bottom = 66
 	_root.add_child(_enemy_name)
 
-	_combo_label = _label("", 24, CYAN)
+	_combo_label = _label("", 24, TEAL)
 	_combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_combo_label.offset_left = 800
 	_combo_label.offset_right = 1130
@@ -353,6 +473,53 @@ func _build_hud() -> void:
 	_combo_label.visible = false
 	_combo_label.z_index = 6
 	_root.add_child(_combo_label)
+
+
+func _build_turn_overlay() -> void:
+	_turn_dim = ColorRect.new()
+	_turn_dim.color = Color(0.01, 0.01, 0.02, 0.0)
+	_turn_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_turn_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_turn_dim.z_index = 20
+	_root.add_child(_turn_dim)
+
+	_turn_layer = Control.new()
+	_turn_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_turn_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_turn_layer.modulate.a = 0.0
+	_turn_layer.visible = false
+	_turn_layer.z_index = 21
+	_root.add_child(_turn_layer)
+
+	var title := _art("your_turn_title.png")
+	if title != null:
+		var w := 520.0
+		var h := w * title.get_height() / title.get_width()
+		var t := TextureRect.new()
+		t.texture = title
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.stretch_mode = TextureRect.STRETCH_SCALE
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.position = Vector2(576.0 - w * 0.5, 246.0)
+		t.size = Vector2(w, h)
+		_turn_layer.add_child(t)
+
+	var rule := _art("turn_rule.png")
+	if rule != null:
+		var w := 620.0
+		var h := w * rule.get_height() / rule.get_width()
+		var r := TextureRect.new()
+		r.texture = rule
+		r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		r.stretch_mode = TextureRect.STRETCH_SCALE
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		r.position = Vector2(576.0 - w * 0.5, 326.0)
+		r.size = Vector2(w, h)
+		_turn_rule_mat = ShaderMaterial.new()
+		_turn_rule_mat.shader = CENTER_WIPE
+		_turn_rule_mat.set_shader_parameter("progress", 1.0)
+		r.material = _turn_rule_mat
+		_turn_layer.add_child(r)
 
 
 
@@ -424,28 +591,61 @@ func _lunge(which: Node2D, dirn: float) -> void:
 	tw.tween_property(which, "position:x", x, 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
-func _duel_bar_chrome() -> Panel:
-	return GothUI.segmented_bar(DUEL_BAR_W, DUEL_BAR_H, 5, DUEL_X0, DUEL_Y0,
-			DUEL_PITCH, DUEL_SLOT_W, DUEL_SLOT_H)
-
-
 func _build_enemy_bar() -> void:
+	_ebar_fill = _duel_bar(true, false)
+
+
+func _duel_bar(right_aligned: bool, with_frame: bool) -> TextureRect:
 	var bar := Control.new()
-	bar.anchor_left = 1.0
-	bar.anchor_right = 1.0
-	bar.offset_left = -280
-	bar.offset_right = -20
-	bar.offset_top = 46
-	bar.offset_bottom = 94
+	if right_aligned:
+		bar.anchor_left = 1.0
+		bar.anchor_right = 1.0
+		bar.offset_left = -BAR_X - BAR_W
+		bar.offset_right = -BAR_X
+	else:
+		bar.offset_left = BAR_X
+		bar.offset_right = BAR_X + BAR_W
+	bar.offset_top = BAR_Y
+	bar.offset_bottom = BAR_Y + BAR_H
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(bar)
 
-	bar.add_child(_duel_bar_chrome())
-	_ebar_base_w = DUEL_SLOT_W
-	for f in GothUI.bar_fills(5, DUEL_X0, DUEL_Y0, DUEL_PITCH,
-			DUEL_SLOT_W, DUEL_SLOT_H):
-		bar.add_child(f)
-		_ebar_fills.append(f)
+	var track := Panel.new()
+	track.size = Vector2(BAR_W, BAR_H)
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ts := StyleBoxFlat.new()
+	ts.bg_color = Color("#1a1018")
+	ts.border_color = Color.BLACK
+	ts.set_border_width_all(1)
+	ts.set_corner_radius_all(int(BAR_H * 0.5))
+	ts.anti_aliasing = false
+	track.add_theme_stylebox_override("panel", ts)
+	bar.add_child(track)
+
+	var fill := TextureRect.new()
+	fill.texture = _art("health_fill.png", HP_DIR)
+	fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fill.stretch_mode = TextureRect.STRETCH_SCALE
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill.position = Vector2.ZERO
+	fill.size = Vector2(BAR_W, BAR_H)
+	bar.add_child(fill)
+
+	if with_frame:
+		var frame := _art("health_frame.png", HP_DIR)
+		if frame != null:
+			var fw := BAR_FRAME_W
+			var fh := fw * frame.get_height() / frame.get_width()
+			var f := TextureRect.new()
+			f.texture = frame
+			f.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			f.stretch_mode = TextureRect.STRETCH_SCALE
+			f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			f.position = Vector2((BAR_W - fw) * 0.5, (BAR_H - fh) * 0.5 - 7.0)
+			f.size = Vector2(fw, fh)
+			f.modulate = Color.WHITE
+			bar.add_child(f)
+	return fill
 
 
 func _start_music() -> void:
@@ -515,39 +715,29 @@ func _play_sfx(path: String) -> void:
 
 
 func _build_player_bar() -> void:
-	var bar := Control.new()
-	bar.offset_left = 20
-	bar.offset_right = 280
-	bar.offset_top = 46
-	bar.offset_bottom = 94
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(bar)
-
-	bar.add_child(_duel_bar_chrome())
-	_pbar_base_w = DUEL_SLOT_W
-	for f in GothUI.bar_fills(5, DUEL_X0, DUEL_Y0, DUEL_PITCH,
-			DUEL_SLOT_W, DUEL_SLOT_H):
-		bar.add_child(f)
-		_pbar_fills.append(f)
+	_pbar_fill = _duel_bar(false, true)
 
 
 func _refresh_player_bar(_cur: int = 0, _mx: int = 0) -> void:
 	if _player == null or not is_instance_valid(_player):
 		return
-	_p_target = float(int(_player.get("health"))) / float(maxi(int(_player.get("max_health")), 1)) * 5.0
+	_p_target = clampf(float(int(_player.get("health")))
+			/ float(maxi(int(_player.get("max_health")), 1)), 0.0, 1.0)
 
 
 func _refresh_enemy_bar() -> void:
 	if _enemy == null or not is_instance_valid(_enemy):
 		return
-	_e_target = float(int(_enemy.get("health"))) / float(maxi(int(_enemy.get("max_health")), 1)) * 5.0
+	_e_target = clampf(float(int(_enemy.get("health")))
+			/ float(maxi(int(_enemy.get("max_health")), 1)), 0.0, 1.0)
 
 
-func _apply_fills(fills: Array[ColorRect], base_w: float, shown: float) -> void:
-	for i in fills.size():
-		var fill := clampf(shown - float(i), 0.0, 1.0)
-		fills[i].visible = fill > 0.001
-		fills[i].size.x = base_w * fill
+func _apply_fills(fill: TextureRect, frac: float) -> void:
+	if fill == null:
+		return
+	var w := BAR_W * clampf(frac, 0.0, 1.0)
+	fill.size.x = w
+	fill.visible = w >= 2.0
 
 
 # ---------------------------------------------------------------- rounds
@@ -623,8 +813,8 @@ func _build_notes() -> void:
 		n.pivot_offset = n.size * 0.5
 		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-		# Long notes get a body trailing above the head, added first so the halo
-		# and skull art draw on top of it.
+		# Long notes get a body trailing above the head, added first so the
+		# glyph draws on top of it.
 		if _pattern[i].has("hold"):
 			var hc: Color = ROW_COLORS[t]
 			var body := ColorRect.new()
@@ -638,22 +828,15 @@ func _build_notes() -> void:
 			cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			n.add_child(cap)
 
-		var gc: Color = ROW_COLORS[t]
-		var glow: Control = LANE_SYMBOL.new()
-		glow.name = "Halo"
-		glow.kind = 3
-		glow.accent = gc
-		glow.position = Vector2(-10, -10)
-		glow.size = n.size + Vector2(20, 20)
-		glow.modulate = Color(1, 1, 1, 0.86)
-		n.add_child(glow)
-
-		var art: Control = LANE_SYMBOL.new()
+		var art := TextureRect.new()
 		art.name = "Glyph"
-		art.kind = t
-		art.accent = gc
-		art.position = Vector2(5, 5)
-		art.size = n.size - Vector2(10, 10)
+		art.texture = _note_tex(t)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.position = Vector2.ZERO
+		art.size = n.size
 		n.add_child(art)
 
 		_root.add_child(n)
@@ -680,22 +863,68 @@ func _enter_phase(p: int) -> void:
 	_feints = 0
 	_clear_hold()
 	_feedback.text = ""
-	_phase_label.text = "ENEMY'S TURN" if p == P.DEMO else ("YOUR TURN" if p == P.PLAYER else "")
-	_phase_label.modulate.a = 0.0
-	create_tween().tween_property(_phase_label, "modulate:a", 1.0, 0.25)
+	if p == P.PLAYER:
+		# The splash gets a fixed two seconds, so give the player phase a
+		# count-in long enough that the first note still lands after it.
+		_lead = maxf(LEAD, ceilf(TURN_BANNER_SEC / _beat_sec + 0.4))
+		_show_turn_banner()
+	else:
+		_lead = LEAD
+		_hide_turn_banner()
 	for i in _notes.size():
 		var n: Control = _notes[i]
 		n.scale = Vector2.ONE
-		n.modulate = Color(1.3, 0.9, 1.6) if int(_pattern[i]["type"]) == FEINT else Color.WHITE
+		n.modulate = Color.WHITE
 	_refresh_enemy_bar()
 
 
+func _show_turn_banner() -> void:
+	if _turn_layer == null:
+		return
+	if _turn_tween != null and _turn_tween.is_valid():
+		_turn_tween.kill()
+	_turn_layer.visible = true
+	_turn_layer.modulate.a = 0.0
+	_turn_dim.color.a = 0.0
+	if _turn_rule_mat != null:
+		_turn_rule_mat.set_shader_parameter("progress", 0.0)
+	# Fade in, wipe the rule out from its centre diamond, hold for the splash's
+	# full duration, then clear before the first note reaches the judge line.
+	var hold := maxf(0.1, TURN_BANNER_SEC - TURN_FADE_IN - TURN_FADE_OUT)
+	_turn_tween = create_tween()
+	_turn_tween.tween_property(_turn_layer, "modulate:a", 1.0, TURN_FADE_IN)
+	_turn_tween.parallel().tween_property(_turn_dim, "color:a", 0.55, TURN_FADE_IN)
+	if _turn_rule_mat != null:
+		var wipe := _turn_tween.parallel().tween_property(_turn_rule_mat,
+				"shader_parameter/progress", 1.0, TURN_RULE_WIPE)
+		wipe.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_turn_tween.tween_interval(hold)
+	_turn_tween.tween_property(_turn_layer, "modulate:a", 0.0, TURN_FADE_OUT)
+	_turn_tween.parallel().tween_property(_turn_dim, "color:a", 0.0, TURN_FADE_OUT)
+	if _turn_rule_mat != null:
+		_turn_tween.parallel().tween_property(_turn_rule_mat,
+				"shader_parameter/progress", 0.0, TURN_FADE_OUT)
+	_turn_tween.tween_callback(func() -> void:
+		if _turn_layer != null:
+			_turn_layer.visible = false)
+
+
+func _hide_turn_banner() -> void:
+	if _turn_tween != null and _turn_tween.is_valid():
+		_turn_tween.kill()
+	if _turn_layer != null:
+		_turn_layer.visible = false
+		_turn_layer.modulate.a = 0.0
+	if _turn_dim != null:
+		_turn_dim.color = Color(0.01, 0.01, 0.02, 0.0)
+
+
 func _note_time(i: int) -> float:
-	return (float(i) + LEAD) * _beat_sec
+	return (float(i) + _lead) * _beat_sec
 
 
 func _phase_end() -> float:
-	return (float(_pattern.size()) + LEAD) * _beat_sec + 0.35
+	return (float(_pattern.size()) + _lead) * _beat_sec + 0.35
 
 
 func _process(delta: float) -> void:
@@ -717,24 +946,24 @@ func _process(delta: float) -> void:
 	var k := 1.0 - exp(-delta * 9.0)
 	_p_show = lerpf(_p_show, _p_target, k)
 	_e_show = lerpf(_e_show, _e_target, k)
-	_apply_fills(_pbar_fills, _pbar_base_w, _p_show)
-	_apply_fills(_ebar_fills, _ebar_base_w, _e_show)
+	_apply_fills(_pbar_fill, _p_show)
+	_apply_fills(_ebar_fill, _e_show)
 
-	# turn indicator: the active round's ring is amber and breathes with the beat
+	# turn indicator: the active round's sparkle is red and breathes with the beat
 	var turn_i := maxi(0, _round - 1) % BEAT_DOTS
 	if turn_i != _turn_last:
 		_turn_last = turn_i
 		for i in _beat_dots.size():
-			var d: Panel = _beat_dots[i]
+			var d: Control = _beat_dots[i]
 			var tw := create_tween()
 			tw.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			tw.tween_property(d, "scale", Vector2(1.35, 1.35) if i == turn_i else Vector2.ONE, 0.22)
 	for i in _beat_dots.size():
 		if i == turn_i:
 			var pulse := 0.65 + 0.35 * sin(_phase_time * TAU / _beat_sec)
-			_beat_dots[i].modulate = Color("#ffd93b", pulse)
+			_beat_dots[i].modulate = Color(RED, pulse)
 		else:
-			_beat_dots[i].modulate = Color(0.35, 0.35, 0.42)
+			_beat_dots[i].modulate = Color(1.0, 1.0, 1.0, 0.85)
 
 	match _phase:
 		P.DEMO:
@@ -777,9 +1006,6 @@ func _update_notes() -> void:
 			var y := JUDGE_Y - (_note_time(i) - _phase_time) * SPEED
 			n.position = Vector2(LANE_CENTER[t] - NOTE_SIZE * 0.5, y - NOTE_SIZE * 0.5)
 			n.visible = y > TRACK_TOP - 8.0 and y < JUDGE_Y + NOTE_SIZE
-		var halo := n.get_node_or_null("Halo") as CanvasItem
-		if halo != null:
-			halo.modulate.a = 0.34 + 0.14 * sin((_note_time(i) - _phase_time) * TAU / _beat_sec)
 		_layout_hold(i, n)
 
 
@@ -1008,7 +1234,7 @@ func _finish_player() -> void:
 
 	_phase = P.RESULT
 	_phase_time = 0.0
-	_phase_label.text = ""
+	_hide_turn_banner()
 	var finishing := false
 	if _dmg_dealt > 0 and is_instance_valid(_enemy):
 		# Would this round's damage drop the enemy? Only the killing blow earns a rank.

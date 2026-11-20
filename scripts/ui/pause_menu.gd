@@ -4,11 +4,19 @@ extends CanvasLayer
 ## Lives as an autoload so it works in any scene and keeps processing while the
 ## tree is paused. It refuses to open on the start screen (whose root is not a
 ## Node2D) and while a rhythm duel is running, because the duel owns the pause
-## state then. The frame is drawn by gothic_ui.gd, not sliced from the sheet.
+## state then. Uses the same Canva modal skin as the title screen's settings
+## page so the two menus read as one design.
 
 signal closed
 
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
+const CanvaUI := preload("res://scripts/ui/canva_ui.gd")
+
+const TITLE_ART := "res://Assets/UI/paused_title.png"
+const PANEL_SIZE := Vector2(760.0, 480.0)
+const BTN_H := 44.0
+const BTN_FONT := 20
+const FULL_MIN_W := 280.0
 
 var _root: Control
 var _music: HSlider
@@ -38,113 +46,83 @@ func _build() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(dim)
 
-	var panel := Panel.new()
-	panel.anchor_left = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -380
-	panel.offset_right = 380
-	panel.offset_top = -240
-	panel.offset_bottom = 240
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	GothUI.dress(panel, 10)
-	_root.add_child(panel)
+	var panel := CanvaUI.modal_panel(_root, PANEL_SIZE, true)
 
-	panel.add_child(_heading("PAUSED", 30.0, 56.0))
+	# Skull with music notes, straddling the panel's top edge.
+	CanvaUI.skull_banner(panel)
 
-	# ornament() comes back anchored full-rect, so the vertical anchors must be
-	# reset to the top or the rule lands on the panel's bottom edge.
-	var rule := GothUI.ornament(GothUI.ORN_DIVIDER, GothUI.BORDER, GothUI.CRIMSON)
-	rule.anchor_right = 1.0
-	rule.anchor_top = 0.0
-	rule.anchor_bottom = 0.0
-	rule.offset_left = 120
-	rule.offset_right = -120
-	rule.offset_top = 92
-	rule.offset_bottom = 110
-	panel.add_child(rule)
+	# The mockup's serif lettering. Without the PNG the game font is used.
+	CanvaUI.heading(panel, TITLE_ART, "Paused", 50.0, 40.0, 40)
 
-	var resume := GothUI.make_button("RESUME", Vector2(300.0, 44.0), 16)
-	_centre(resume, 300.0, 122.0)
-	resume.pressed.connect(close)
-	panel.add_child(resume)
+	var x_button := CanvaUI.plain_close(64.0, close)
+	x_button.anchor_left = 1.0
+	x_button.anchor_right = 1.0
+	x_button.offset_left = -82.0
+	x_button.offset_right = -18.0
+	x_button.offset_top = 24.0
+	x_button.offset_bottom = 88.0
+	panel.add_child(x_button)
 
-	panel.add_child(_row_label("MUSIC", 186.0))
-	_music = _slider(192.0)
-	_music.value_changed.connect(func(v: float) -> void: Settings.set_music(v))
-	panel.add_child(_music)
+	# Rows are centred as a block and sit a touch above the panel's midpoint,
+	# matching the mockup.
+	_music = CanvaUI.slider_row(panel, "music", 160.0, Settings.music,
+			func(v: float) -> void: Settings.set_music(v), -15.0)
+	_sfx = CanvaUI.slider_row(panel, "sound", 209.0, Settings.sfx,
+			func(v: float) -> void: Settings.set_sfx(v), -15.0)
 
-	panel.add_child(_row_label("SOUND", 236.0))
-	_sfx = _slider(242.0)
-	_sfx.value_changed.connect(func(v: float) -> void: Settings.set_sfx(v))
-	panel.add_child(_sfx)
-
-	_full = GothUI.make_button("FULLSCREEN", Vector2(420.0, 44.0), 16)
-	_centre(_full, 420.0, 290.0)
+	_full = GothUI.make_button("", Vector2(280.0, BTN_H), BTN_FONT)
+	CanvaUI.skin_button(_full, true)
+	_centre(_full, 280.0, 258.0, BTN_H)
 	_full.pressed.connect(_toggle_fullscreen)
 	panel.add_child(_full)
 
-	var quit := GothUI.make_button("QUIT TO MENU", Vector2(300.0, 44.0), 16)
-	_centre(quit, 300.0, 346.0)
+	var resume := GothUI.make_button("resume", Vector2(210.0, BTN_H), BTN_FONT)
+	CanvaUI.skin_button(resume, true)
+	_centre(resume, 210.0, 318.0, BTN_H)
+	resume.pressed.connect(close)
+	panel.add_child(resume)
+
+	var quit := GothUI.make_button("quit to menu", Vector2(220.0, BTN_H), BTN_FONT)
+	CanvaUI.skin_button(quit, true)
+	_centre(quit, 220.0, 378.0, BTN_H)
 	quit.pressed.connect(_quit_to_menu)
 	panel.add_child(quit)
 
 
-func _heading(text: String, y: float, h: float) -> Label:
-	var l := GothUI.label(text, 32, GothUI.CYAN)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.anchor_right = 1.0
-	l.offset_top = y
-	l.offset_bottom = y + h
-	return l
-
-
-func _row_label(text: String, y: float) -> Label:
-	var l := GothUI.label(text, 16, GothUI.TEXT)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	l.offset_left = 70
-	l.offset_right = 250
-	l.offset_top = y
-	l.offset_bottom = y + 38
-	return l
-
-
 ## Centres a fixed-width control horizontally with a fixed height.
-func _centre(c: Control, w: float, y: float) -> void:
+func _centre(c: Control, w: float, y: float, h: float) -> void:
 	c.anchor_left = 0.5
 	c.anchor_right = 0.5
 	c.offset_left = -w * 0.5
 	c.offset_right = w * 0.5
 	c.offset_top = y
-	c.offset_bottom = y + 44.0
-
-
-func _slider(y: float) -> HSlider:
-	var s := HSlider.new()
-	s.min_value = 0.0
-	s.max_value = 1.0
-	s.step = 0.05
-	s.offset_left = 270
-	s.offset_right = 650
-	s.offset_top = y + 6
-	s.offset_bottom = y + 32
-	GothUI.style_slider(s)
-	return s
+	c.offset_bottom = y + h
 
 
 func _toggle_fullscreen() -> void:
-	var ok := Settings.set_fullscreen(not Settings.fullscreen)
-	_full.text = ("FULLSCREEN: ON" if Settings.fullscreen else "FULLSCREEN: OFF") if ok \
-		else "FULLSCREEN NEEDS ITS OWN WINDOW"
+	var want := not Settings.fullscreen
+	var ok := Settings.set_fullscreen(want)
+	_sync()
+	# The button keeps toggling even if the OS refused the resize (the editor's
+	# embedded game view cannot own its window); the tooltip explains the limit.
+	_full.tooltip_text = "" if ok else \
+		"Fullscreen is unavailable in the editor preview. Run the game in its own window."
 
 
 func _sync() -> void:
 	_music.set_value_no_signal(Settings.music)
 	_sfx.set_value_no_signal(Settings.sfx)
-	_full.text = "FULLSCREEN: ON" if Settings.fullscreen else "FULLSCREEN: OFF"
+	_set_full_label("fullscreen:on" if Settings.fullscreen else "fullscreen:off")
+
+
+## Keeps the fullscreen button centred while letting it grow for its label.
+func _set_full_label(text: String) -> void:
+	_full.text = text
+	var text_w := GothUI.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			BTN_FONT).x
+	var w := maxf(FULL_MIN_W, text_w + 56.0)
+	_full.offset_left = -w * 0.5
+	_full.offset_right = w * 0.5
 
 
 func open() -> void:
