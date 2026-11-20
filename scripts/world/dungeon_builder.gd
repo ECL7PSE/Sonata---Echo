@@ -1426,12 +1426,15 @@ func _is_final_chest(cell: Vector2i) -> bool:
 ## Seeded from the floor seed and depth, so the same floor always produces the
 ## same cursed chest. Never the final chest: that one is a doorway, not a payout.
 func _pick_cursed_chest(run_seed: int, depth: int) -> Vector2i:
-	var pool := CHESTS.size() - 1
-	if pool <= 0:
+	var pool: Array[Vector2i] = []
+	for cell in CHESTS:
+		if not _is_final_chest(cell):
+			pool.append(cell)
+	if pool.is_empty():
 		return Vector2i(-1, -1)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = run_seed * 31 + depth * 7919
-	return CHESTS[rng.randi_range(0, pool - 1)]
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 
 ## Tells the map which room the boss is in, so the fight is marked before it
