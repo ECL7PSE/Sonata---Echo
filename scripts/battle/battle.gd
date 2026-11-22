@@ -46,9 +46,14 @@ const PERFECT := 0.10
 # The pair sits centred above the rail, so both duelsists are read in one place.
 const BAR_W := 210.0
 const BAR_H := 18.0
-const BAR_Y := 64.0
+const BAR_Y := 296.0
 const BAR_GAP := 12.0
 const BAR_FRAME_W := 230.0
+## Where the duelists stand, and how big they are drawn.
+const PORTRAIT_X_PLAYER := 190.0
+const PORTRAIT_X_ENEMY := 962.0
+const PORTRAIT_Y := 430.0
+const PORTRAIT_H := 215.0
 const ROW_COLORS := [Color("#d42434"), Color("#f2eef7"), Color("#9a6cf0"), Color("#f0b429")]
 const RED := Color("#d42434")
 const TEAL := Color("#4fead1")
@@ -370,7 +375,7 @@ func _build_highway() -> void:
 		c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		c.stretch_mode = TextureRect.STRETCH_SCALE
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		c.position = Vector2(576.0 - cw * 0.5, TRACK_TOP - ch * 0.5 + 6.0)
+		c.position = Vector2(576.0 - cw * 0.5, TRACK_TOP - ch * 0.5 - 22.0)
 		c.size = Vector2(cw, ch)
 		_root.add_child(c)
 
@@ -458,29 +463,29 @@ func _build_hud() -> void:
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
-	var you := _label("YOU", 13, Color("#f2eef7"))
+	var you := _label("YOU", 18, Color("#f2eef7"))
 	you.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	you.offset_left = 576.0 - BAR_W - BAR_GAP * 0.5
+	you.offset_left = PORTRAIT_X_PLAYER - BAR_W * 0.5
 	you.offset_right = you.offset_left + BAR_W
 	# Clear of the skull frame, which reaches up over the player's bar.
-	you.offset_top = 14
-	you.offset_bottom = 34
+	you.offset_top = 222
+	you.offset_bottom = 246
 	_root.add_child(you)
 
-	_enemy_name = _label("ENEMY", 13, RED)
+	_enemy_name = _label("ENEMY", 18, RED)
 	_enemy_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_enemy_name.offset_left = 576.0 + BAR_GAP * 0.5
+	_enemy_name.offset_left = PORTRAIT_X_ENEMY - BAR_W * 0.5
 	_enemy_name.offset_right = _enemy_name.offset_left + BAR_W
-	_enemy_name.offset_top = 40
-	_enemy_name.offset_bottom = 60
+	_enemy_name.offset_top = 222
+	_enemy_name.offset_bottom = 246
 	_root.add_child(_enemy_name)
 
 	_combo_label = _label("", 24, TEAL)
 	_combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_combo_label.offset_left = 800
-	_combo_label.offset_right = 1130
-	_combo_label.offset_top = 300
-	_combo_label.offset_bottom = 340
+	_combo_label.offset_left = 930
+	_combo_label.offset_right = 1140
+	_combo_label.offset_top = 556
+	_combo_label.offset_bottom = 596
 	_combo_label.visible = false
 	_combo_label.z_index = 6
 	_root.add_child(_combo_label)
@@ -543,11 +548,13 @@ func _clear_duelists() -> void:
 
 
 func _build_duelists() -> void:
-	_player_portrait = _portrait_from(_player, false, 190.0)
-	_enemy_portrait = _portrait_from(_enemy, true, 962.0)
+	# Both duelists face the camera: the rail is the fight, not a side view.
+	_player_portrait = _portrait_from(_player, false, PORTRAIT_X_PLAYER)
+	_enemy_portrait = _portrait_from(_enemy, true, PORTRAIT_X_ENEMY)
 
 
-func _portrait_from(actor: Node, face_left: bool, x: float) -> Node2D:
+## `leans_left` only steers the battered lean toward the centre of the screen.
+func _portrait_from(actor: Node, leans_left: bool, x: float) -> Node2D:
 	if actor == null or not is_instance_valid(actor):
 		return null
 	var s: Node2D = null
@@ -557,10 +564,17 @@ func _portrait_from(actor: Node, face_left: bool, x: float) -> Node2D:
 		c.texture = ps.texture
 		c.hframes = ps.hframes
 		c.vframes = ps.vframes
-		c.frame = ps.frame
-		c.flip_h = face_left
+		# Column 0 of the player sheet faces the camera.
+		c.frame = 0
+		c.flip_h = false
 		c.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		c.scale = Vector2.ONE * clampf(150.0 / _frame_height(ps), 0.5, 12.0)
+		var fw := float(ps.texture.get_width()) / maxf(1.0, float(ps.hframes))
+		var fh := float(ps.texture.get_height()) / maxf(1.0, float(ps.vframes))
+		var sheet: Image = ps.texture.get_image()
+		var cell: Image = null
+		if sheet != null:
+			cell = sheet.get_region(Rect2i(0, 0, int(fw), int(fh)))
+		_fit_portrait(c, cell, fw, fh)
 		s = c
 	else:
 		var es = actor.get("sprite")
@@ -572,29 +586,51 @@ func _portrait_from(actor: Node, face_left: bool, x: float) -> Node2D:
 			c2.sprite_frames = es.sprite_frames
 			c2.animation = anim
 			c2.frame = es.frame
-			c2.flip_h = face_left
+			c2.flip_h = false
 			c2.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 			var tex: Texture2D = es.sprite_frames.get_frame_texture(anim, es.frame)
-			var fh := float(tex.get_height()) if tex != null else 32.0
-			c2.scale = Vector2.ONE * clampf(150.0 / fh, 0.5, 12.0) * 1.8
+			if tex != null:
+				_fit_portrait(c2, _frame_image(tex),
+					float(tex.get_width()), float(tex.get_height()))
 			s = c2
 	if s == null:
 		return null
-	s.position = Vector2(x, 430.0)
+	s.position = Vector2(x, PORTRAIT_Y)
 	# Remember the resting shape so animations can always return to it.
 	s.set_meta("home_scale", s.scale)
-	s.set_meta("face_left", face_left)
+	s.set_meta("lean_left", leans_left)
 	s.set_meta("tint", Color.WHITE)
 	s.set_meta("slump", 0.0)
 	_root.add_child(s)
 	return s
 
 
-func _frame_height(spr: Sprite2D) -> float:
-	var h := float(spr.texture.get_height())
-	if spr.vframes > 1:
-		h /= float(spr.vframes)
-	return maxf(h, 1.0)
+## Scales a portrait so its VISIBLE body fills PORTRAIT_H and centres that
+## body on the portrait spot. Monster art sits in padded frames, so scaling by
+## the frame would leave a small mushroom looking tiny and hanging low.
+func _fit_portrait(node: CanvasItem, img: Image, fw: float, fh: float) -> void:
+	var centre := Vector2.ZERO
+	var body_h := fh
+	if img != null:
+		var used := img.get_used_rect()
+		if used.size.x > 0 and used.size.y > 0:
+			centre = Vector2(used.get_center()) - Vector2(fw, fh) * 0.5
+			body_h = float(used.size.y)
+	node.scale = Vector2.ONE * clampf(PORTRAIT_H / body_h, 0.5, 12.0)
+	node.set("offset", -centre)
+
+
+## The pixels of one animation frame, cropped out of its atlas.
+func _frame_image(tex: Texture2D) -> Image:
+	if tex == null:
+		return null
+	if tex is AtlasTexture:
+		var at := tex as AtlasTexture
+		var atlas := at.atlas.get_image()
+		if atlas == null:
+			return null
+		return atlas.get_region(at.region)
+	return tex.get_image()
 
 
 func _lunge(which: Node2D, dirn: float) -> void:
@@ -628,7 +664,7 @@ func _turn_pose(which: Node2D) -> void:
 
 ## Forward lean, in radians, that a battered duelist holds.
 func _slump(which: Node2D) -> float:
-	var dirn := -1.0 if bool(which.get_meta("face_left", false)) else 1.0
+	var dirn := -1.0 if bool(which.get_meta("lean_left", false)) else 1.0
 	return dirn * float(which.get_meta("slump", 0.0))
 
 
@@ -657,10 +693,8 @@ func _build_enemy_bar() -> void:
 
 func _duel_bar(right_aligned: bool, with_frame: bool) -> TextureRect:
 	var bar := Control.new()
-	# Both bars sit in one centred pair above the rail.
-	var left := 576.0 - BAR_W - BAR_GAP * 0.5
-	if right_aligned:
-		left = 576.0 + BAR_GAP * 0.5
+	# Each bar sits directly over its own duelist.
+	var left := (PORTRAIT_X_ENEMY if right_aligned else PORTRAIT_X_PLAYER) - BAR_W * 0.5
 	bar.offset_left = left
 	bar.offset_right = left + BAR_W
 	bar.offset_top = BAR_Y
@@ -1233,9 +1267,9 @@ func _process(delta: float) -> void:
 
 	_bob += delta
 	if _player_portrait != null and is_instance_valid(_player_portrait):
-		_player_portrait.position.y = 430.0 + sin(_bob * 2.4) * 3.0
+		_player_portrait.position.y = PORTRAIT_Y + sin(_bob * 2.4) * 3.0
 	if _enemy_portrait != null and is_instance_valid(_enemy_portrait):
-		_enemy_portrait.position.y = 430.0 + sin(_bob * 2.1 + 1.3) * 3.0
+		_enemy_portrait.position.y = PORTRAIT_Y + sin(_bob * 2.1 + 1.3) * 3.0
 	# bars glide toward their new value instead of snapping
 	var k := 1.0 - exp(-delta * 9.0)
 	_p_show = lerpf(_p_show, _p_target, k)

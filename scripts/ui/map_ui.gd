@@ -1,10 +1,10 @@
 extends CanvasLayer
 ## Explorer's ledger: one overlay, two pages.
 ##
-## MAP is the parchment the dungeon builder's room table is drawn onto; ECHOES
-## is what you own and are wearing. Tab opens it anywhere in the run, Q and E
-## turn the page. SaveManager owns the single instance so the bench and the
-## keyboard open the same one.
+## MAP is the dark glass sheet the dungeon builder's room table is drawn onto;
+## ECHOES is what you own and are wearing. Tab opens it anywhere in the run, Q
+## and E turn the page. SaveManager owns the single instance so the bench and
+## the keyboard open the same one.
 
 signal closed
 
@@ -15,9 +15,9 @@ const BUILDER_PATH := "res://scripts/world/dungeon_builder.gd"
 const PAGE_MAP := 0
 const PAGE_ECHOES := 1
 
-## Screen pixels per dungeon grid cell on the parchment.
+## Screen pixels per dungeon grid cell on the sheet.
 const CELL := 10.4
-## The page area the parchment lives in, inside the 600x600 panel.
+## The page area the sheet lives in, inside the 600x600 panel.
 const MAP_TOP := 74.0
 const MAP_W := 600.0
 const MAP_H := 420.0
@@ -29,7 +29,7 @@ var _title: Label
 var _map_page: Control
 var _echo_page: Control
 var _board: Control
-var _parchment: ColorRect
+var _sheet: Panel
 var _echoes_box: Control
 var _legend: Label
 var _legend2: Label
@@ -151,18 +151,24 @@ func _build_map_page() -> void:
 	_map_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(_map_page)
 
-	# Parchment: the sheet is sized to the dungeon it carries, so there is no
-	# blank tan half and nothing spills off the paper.
-	_parchment = ColorRect.new()
-	_parchment.color = Color("#d9c8a3")
-	_parchment.position = Vector2(0.0, MAP_TOP)
-	_parchment.size = Vector2(MAP_W, MAP_H)
-	_parchment.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_page.add_child(_parchment)
+	# The sheet is sized to the dungeon it carries, so there is no blank half
+	# and nothing spills off it. Dark glass, not parchment: the map wears the
+	# same neon as the rest of the game.
+	_sheet = Panel.new()
+	var sheet_style := StyleBoxFlat.new()
+	sheet_style.bg_color = Color("#0a1020")
+	sheet_style.border_color = Color("#2b6f7a")
+	sheet_style.set_border_width_all(2)
+	sheet_style.set_corner_radius_all(0)
+	_sheet.add_theme_stylebox_override("panel", sheet_style)
+	_sheet.position = Vector2(0.0, MAP_TOP)
+	_sheet.size = Vector2(MAP_W, MAP_H)
+	_sheet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_page.add_child(_sheet)
 
 	_board = Control.new()
-	_board.position = _parchment.position
-	_board.size = _parchment.size
+	_board.position = _sheet.position
+	_board.size = _sheet.size
 	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_page.add_child(_board)
 
@@ -225,11 +231,11 @@ func _refresh() -> void:
 		_refresh_echoes()
 
 
-## Rebuilds the parchment from GameState.explored and the live player.
+## Rebuilds the sheet from GameState.explored and the live player.
 ##
-## Ink on paper: the whole dungeon is outlined, the rooms you have walked into
-## are filled and named, and it is scaled to fill the page instead of sitting in
-## one corner of a big empty sheet.
+## Neon ink on dark glass: the whole dungeon is outlined, the rooms you have
+## walked into are filled and named, and it is scaled to fill the page instead
+## of sitting in one corner of a big empty sheet.
 func _refresh_map() -> void:
 	for c in _board.get_children():
 		c.queue_free()
@@ -258,16 +264,16 @@ func _refresh_map() -> void:
 	# The sheet is the drawing plus its ink margin, centred on the page.
 	var sheet := Vector2(bounds.size) * _k + Vector2(PAD, PAD) * 2.0
 	var sheet_pos := Vector2((MAP_W - sheet.x) * 0.5, MAP_TOP + (MAP_H - sheet.y) * 0.5)
-	_parchment.position = sheet_pos
-	_parchment.size = sheet
+	_sheet.position = sheet_pos
+	_sheet.size = sheet
 	_board.position = sheet_pos
 	_board.size = sheet
 	_origin = Vector2(PAD, PAD)
 	_world_scale = float(builder.GRID) * float(builder.SCALE)
 
-	const INK := Color("#2a2118")
-	const INK_SOFT := Color("#9a8763")
-	const ROOM_INK := Color("#cdb995")
+	const INK := Color("#4fead1")
+	const INK_SOFT := Color("#33496b")
+	const ROOM_INK := Color("#132033")
 
 	# Hallways first, so the rooms ink over their ends.
 	for i in names.size():
