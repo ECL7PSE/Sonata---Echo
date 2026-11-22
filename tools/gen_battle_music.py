@@ -4,15 +4,18 @@ Run with plain Python 3 (stdlib only):
 
     python tools/gen_battle_music.py
 
-Each species gets its own key, mode, tempo and character. The tempo here MUST
-match SPECIES_STYLE[key]["bpm"] in scripts/battle/battle.gd - the notes fall on
-this grid.
+Each species gets its own key, tempo and groove. The tempo here MUST match
+SPECIES_STYLE[key]["bpm"] in scripts/battle/battle.gd - the notes fall on this
+grid.
 
-Arrangement rules, so the tracks stay listenable rather than a pile of voices:
-every chord is a diatonic triad of the mode, every melody note is a chord tone
-of the bar it lands in, the pad is soft-edged, and only one strike sounds at a
-time. The loops are seamless: voices are summed modulo the buffer, so decays
-that run past the end wrap into the start instead of clicking.
+The arrangement is a duel groove, not an organ drone: a kick and a snare that
+push the bar, hats that tick the sixteenths, a syncopated bass, chord stabs on
+the offbeats and a bright lead that answers itself. The busier the species, the
+more sixteenth-note hats, the more bass movement and the harder the lead hits,
+so the music itself says how much trouble you are in.
+
+The loops are seamless: voices are summed modulo the buffer, so decays that run
+past the end wrap into the start instead of clicking.
 """
 
 import math
@@ -24,6 +27,7 @@ import wave
 SR = 22050
 BARS = 8
 BEATS_PER_BAR = 4
+STEPS_PER_BAR = 16  # sixteenth notes
 
 # semitone offsets from the root
 MODES = {
@@ -33,7 +37,7 @@ MODES = {
     "dorian": [0, 2, 3, 5, 7, 9, 10],
 }
 
-# scale degrees, one chord per bar
+# One chord per bar, in scale degrees.
 PROGRESSIONS = [
     [0, 5, 3, 4],  # i - VI - iv - v
     [0, 3, 4, 0],  # i - iv - v - i
@@ -41,26 +45,39 @@ PROGRESSIONS = [
     [0, 2, 5, 4],  # i - III - VI - v
 ]
 
-# Character per species: how loud each voice sits, and how busy the melody is.
-# `step` is the melody grid in beats, `density` the chance a slot is played.
+# Groove per species. `drive` is how hard the drums push: 1 is a plain backbeat,
+# 3 is a wall of sixteenths. `lead` is the top hook's busyness, 0..1.
 PROFILES = {
-    "rat": dict(root=220.0, mode="minor", bpm=152, step=0.5, density=0.55,
-                octave=12, pad=0.12, mel=0.20, bell=0.07, thump=0.20),
-    "slime": dict(root=147.0, mode="phrygian", bpm=84, step=1.0, density=0.45,
-                  octave=0, pad=0.18, mel=0.14, bell=0.16, thump=0.30),
-    "bat": dict(root=330.0, mode="harmonic", bpm=138, step=0.5, density=0.50,
-                octave=12, pad=0.10, mel=0.16, bell=0.09, thump=0.14),
-    "mushroom": dict(root=196.0, mode="dorian", bpm=92, step=1.0, density=0.40,
-                     octave=0, pad=0.18, mel=0.12, bell=0.20, thump=0.22),
-    "flying_eye": dict(root=233.0, mode="minor", bpm=126, step=0.5, density=0.40,
-                       octave=12, pad=0.15, mel=0.14, bell=0.12, thump=0.16),
-    "goblin": dict(root=131.0, mode="minor", bpm=146, step=0.5, density=0.60,
-                   octave=12, pad=0.10, mel=0.18, bell=0.06, thump=0.26),
-    "mimic": dict(root=185.0, mode="harmonic", bpm=108, step=1.0, density=0.45,
-                  octave=12, pad=0.15, mel=0.16, bell=0.16, thump=0.20),
-    "skeleton": dict(root=147.0, mode="minor", bpm=132, step=2.0, density=0.30,
-                     octave=0, pad=0.24, mel=0.10, bell=0.22, thump=0.24),
+    "rat": dict(root=220.0, mode="minor", bpm=124, drive=1, lead=0.45,
+                bass_groove=0.55, stab=0.35),
+    "mushroom": dict(root=196.0, mode="dorian", bpm=112, drive=1, lead=0.30,
+                     bass_groove=0.40, stab=0.25),
+    "slime": dict(root=155.56, mode="phrygian", bpm=128, drive=2, lead=0.40,
+                  bass_groove=0.60, stab=0.30),
+    "flying_eye": dict(root=233.08, mode="minor", bpm=134, drive=2, lead=0.55,
+                       bass_groove=0.55, stab=0.35),
+    "goblin": dict(root=130.81, mode="minor", bpm=140, drive=2, lead=0.60,
+                   bass_groove=0.70, stab=0.40),
+    "bat": dict(root=164.81, mode="harmonic", bpm=144, drive=3, lead=0.65,
+                bass_groove=0.75, stab=0.45),
+    "skeleton": dict(root=146.83, mode="minor", bpm=150, drive=3, lead=0.50,
+                     bass_groove=0.70, stab=0.55),
+    "mimic": dict(root=185.0, mode="harmonic", bpm=156, drive=3, lead=0.75,
+                  bass_groove=0.85, stab=0.60),
 }
+
+# Kick, snare and hat patterns, in sixteenths inside a bar.
+KICK_PATTERNS = {
+    1: [0, 8],
+    2: [0, 6, 8, 14],
+    3: [0, 3, 6, 8, 11, 14],
+}
+SNARE_STEPS = [4, 12]
+# Bass: root, fifth, octave and the pushes in between.
+BASS_STEPS = [0, 3, 6, 8, 10, 14]
+BASS_SHAPE = [0, 0, 7, 12, 0, 7]
+# Chord stabs land on the offbeats, the way a funk rhythm section leans.
+STAB_STEPS = [2, 6, 10, 14]
 
 
 def semis(root, n):
@@ -81,55 +98,84 @@ def triad(mode, degree):
     return [at(degree), at(degree + 2), at(degree + 4)]
 
 
-def pad(buf, start, dur, freq, gain):
-    """Soft organ pipe: sine plus a whisper of second harmonic, gentle edges."""
+def kick(buf, start, gain):
+    """Thump: pitch drops fast, body dies quickly."""
+    n = int(0.22 * SR)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / SR
+        f = 48.0 + 130.0 * math.exp(-32.0 * t)
+        phase += 2.0 * math.pi * f / SR
+        out.append(math.sin(phase) * math.exp(-13.0 * t))
+    place(buf, start, out, gain)
+
+
+def snare(buf, start, gain, rnd):
+    """Backbeat: a body tone plus a short hiss of noise."""
+    n = int(0.17 * SR)
+    out = []
+    for i in range(n):
+        t = i / SR
+        hiss = rnd.uniform(-1.0, 1.0) * math.exp(-26.0 * t)
+        body = math.sin(2.0 * math.pi * 190.0 * t) * math.exp(-30.0 * t) * 0.6
+        out.append((hiss * 0.8 + body) * min(1.0, t / 0.002))
+    place(buf, start, out, gain)
+
+
+def hat(buf, start, gain, rnd, open_hat=False):
+    """Tick: high noise, no body, gone in a blink."""
+    dur = 0.11 if open_hat else 0.035
+    n = int(dur * SR)
+    out = []
+    prev = 0.0
+    for i in range(n):
+        t = i / SR
+        noise = rnd.uniform(-1.0, 1.0)
+        bright = noise - prev  # crude high-pass, keeps it sibilant
+        prev = noise
+        out.append(bright * math.exp(-55.0 * t) * (0.55 if open_hat else 0.4))
+    place(buf, start, out, gain)
+
+
+def bass(buf, start, dur, freq, gain):
+    """Funk bass: round body, quick decay, a touch of grit."""
     n = max(1, int(dur * SR))
-    attack = max(1, int(0.18 * SR))
-    release = max(1, int(0.22 * SR))
     w = 2.0 * math.pi * freq
     out = []
     for i in range(n):
         t = i / SR
-        vibrato = 1.0 + 0.002 * math.sin(2.0 * math.pi * 4.2 * t)
-        s = math.sin(w * t * vibrato) + 0.18 * math.sin(2.0 * w * t * vibrato)
-        edge = min(1.0, i / attack, (n - i) / release)
-        out.append(s * max(0.0, edge))
+        s = (math.sin(w * t) + 0.28 * math.sin(2.0 * w * t)
+             + 0.10 * math.sin(3.0 * w * t))
+        out.append(s * math.exp(-4.2 * t) * min(1.0, t / 0.004))
     place(buf, start, out, gain)
 
 
-def pluck(buf, start, dur, freq, gain):
-    """Harp-ish note: soft triangle with a fast decay."""
+def stab(buf, start, dur, freqs, gain):
+    """Chord stab: bright, short, with the bite of a filtered keyboard."""
+    n = max(1, int(dur * SR))
+    out = []
+    for i in range(n):
+        t = i / SR
+        s = 0.0
+        for f in freqs:
+            w = 2.0 * math.pi * f
+            s += math.sin(w * t) + 0.22 * math.sin(2.0 * w * t) + 0.08 * math.sin(3.0 * w * t)
+        out.append(s / len(freqs) * math.exp(-9.0 * t) * min(1.0, t / 0.003))
+    place(buf, start, out, gain)
+
+
+def lead(buf, start, dur, freq, gain):
+    """Top hook: square-ish and bright, the part you hum."""
     n = max(1, int(dur * SR))
     w = 2.0 * math.pi * freq
     out = []
     for i in range(n):
         t = i / SR
-        s = math.sin(w * t) + 0.22 * math.sin(2.0 * w * t) + 0.06 * math.sin(3.0 * w * t)
-        out.append(s * math.exp(-2.6 * t) * min(1.0, t / 0.006))
-    place(buf, start, out, gain)
-
-
-def bell(buf, start, dur, freq, gain):
-    """Church bell: harmonic partials only, so it rings instead of screeching."""
-    n = max(1, int(dur * SR))
-    w = 2.0 * math.pi * freq
-    out = []
-    for i in range(n):
-        t = i / SR
-        s = (math.exp(-1.1 * t) * math.sin(w * t)
-             + 0.42 * math.exp(-1.8 * t) * math.sin(2.0 * w * t)
-             + 0.18 * math.exp(-2.6 * t) * math.sin(3.0 * w * t))
-        out.append(s * min(1.0, t / 0.004))
-    place(buf, start, out, gain)
-
-
-def thump(buf, start, freq, gain):
-    n = max(1, int(0.18 * SR))
-    out = []
-    for i in range(n):
-        t = i / SR
-        f = freq * (1.0 - 0.25 * t / 0.18)
-        out.append(math.sin(2.0 * math.pi * f * t) * math.exp(-14.0 * t))
+        vib = 1.0 + 0.004 * math.sin(2.0 * math.pi * 5.5 * t)
+        s = (math.sin(w * t * vib) + 0.35 * math.sin(3.0 * w * t * vib)
+             + 0.12 * math.sin(5.0 * w * t * vib))
+        out.append(s * math.exp(-3.4 * t) * min(1.0, t / 0.005))
     place(buf, start, out, gain)
 
 
@@ -138,55 +184,66 @@ def build(key, seed):
     mode = MODES[p["mode"]]
     rnd = random.Random(seed)
     beat = 60.0 / p["bpm"]
+    step = beat / 4.0
     bar = BEATS_PER_BAR * beat
     total = int(round(BARS * bar * SR))
     buf = [0.0] * total
     prog = rnd.choice(PROGRESSIONS)
     chords = [triad(mode, prog[b % len(prog)]) for b in range(BARS)]
 
-    # One sustained chord per bar: root, third, fifth and an octave above.
+    kick_steps = KICK_PATTERNS[p["drive"]]
+    hat_steps = list(range(0, STEPS_PER_BAR, 2 if p["drive"] < 3 else 1))
+
     for b in range(BARS):
-        start = int(b * bar * SR)
-        for c in chords[b]:
-            pad(buf, start, bar * 0.98, semis(p["root"], c), p["pad"] * 0.4)
-        pad(buf, start, bar * 0.98, semis(p["root"], chords[b][0] - 12), p["pad"] * 0.7)
+        bar_start = int(b * bar * SR)
+        chord = chords[b]
+        root_tone = chord[0]
 
-    # Melody: chord tones of the bar it lands in, one octave up so it sings.
-    slots = int(round(BARS * BEATS_PER_BAR / p["step"]))
-    last = -1
-    for s in range(slots):
-        if rnd.random() > p["density"]:
-            continue
-        t = s * p["step"] * beat
-        b = min(BARS - 1, int(t / bar))
-        tone = chords[b][rnd.randrange(3)]
-        if b == last and rnd.random() < 0.5:
-            continue  # leave a breath instead of repeating the same bar tone
-        last = b
-        freq = semis(p["root"], tone + p["octave"] + 12)
-        dur = p["step"] * beat * rnd.choice([0.9, 1.7])
-        pluck(buf, int(t * SR), dur, freq, p["mel"])
+        # --- drums: the push
+        for s in kick_steps:
+            kick(buf, bar_start + int(s * step * SR), 0.55)
+        for s in SNARE_STEPS:
+            snare(buf, bar_start + int(s * step * SR), 0.30, rnd)
+        for s in hat_steps:
+            if rnd.random() < 0.86:
+                hat(buf, bar_start + int(s * step * SR), 0.16, rnd)
+        if p["drive"] >= 2 and b % 4 == 3:
+            hat(buf, bar_start + int(14 * step * SR), 0.14, rnd, open_hat=True)
 
-    # Bell on the downbeat that opens each half, one quiet answer later.
-    bell(buf, 0, 2.4, semis(p["root"], chords[0][0] + 12), p["bell"])
-    bell(buf, int(4 * bar * SR), 2.4, semis(p["root"], chords[4][0] + 12), p["bell"])
-    if p["bell"] >= 0.12:
-        bell(buf, int(6 * bar * SR), 1.8, semis(p["root"], chords[6][2] + 12), p["bell"] * 0.6)
+        # --- bass: root, fifth, octave, pushed around the beat
+        for i, s in enumerate(BASS_STEPS):
+            if rnd.random() > p["bass_groove"] + 0.25:
+                continue
+            tone = root_tone + BASS_SHAPE[i % len(BASS_SHAPE)]
+            bass(buf, bar_start + int(s * step * SR), step * 1.6,
+                 semis(p["root"], tone - 24), 0.42)
 
-    # Heartbeat: the bar's downbeat, and a softer one on beat three.
-    for b in range(BARS):
-        thump(buf, int(b * bar * SR), semis(p["root"], -24), p["thump"])
-        thump(buf, int((b * bar + 2.0 * beat) * SR), semis(p["root"], -24), p["thump"] * 0.5)
+        # --- stabs: the chords lean on the offbeats
+        for s in STAB_STEPS:
+            if rnd.random() > p["stab"] + 0.35:
+                continue
+            freqs = [semis(p["root"], c + 12) for c in chord]
+            stab(buf, bar_start + int(s * step * SR), step * 1.2, freqs, 0.20)
 
-    # Two soft echoes, then normalise. Linear gain only - no clipping, no drive.
-    out = list(buf)
-    for delay_s, gain in ((0.078, 0.16), (0.151, 0.08)):
-        delay = int(delay_s * SR)
-        for i in range(total):
-            out[i] += gain * out[(i - delay) % total]
-    peak = max(1e-9, max(abs(v) for v in out))
-    scale = 0.64 / peak
-    return [v * scale for v in out]
+        # --- lead: a hook that answers itself, one bar of question and answer
+        for half in range(2):
+            if rnd.random() > p["lead"]:
+                continue
+            for s in range(8):
+                if rnd.random() < 0.45:
+                    continue
+                beat_in_bar = half * 2.0 + s * 0.5
+                b2 = min(BARS - 1, b + (1 if half == 1 else 0))
+                tone = chords[b2][rnd.randrange(3)]
+                if half == 1:
+                    tone += 12  # the answer climbs
+                lead(buf, bar_start + int(beat_in_bar * beat * SR), beat * 0.45,
+                     semis(p["root"], tone + 12), 0.24)
+
+    # Normalise. Linear gain only - no clipping, no drive.
+    peak = max(1e-9, max(abs(v) for v in buf))
+    scale = 0.72 / peak
+    return [v * scale for v in buf]
 
 
 def write(path, samples):

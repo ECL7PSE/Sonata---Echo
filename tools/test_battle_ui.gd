@@ -22,20 +22,16 @@ func _initialize() -> void:
 		if n is Label:
 			labels[str(n.text)] = n
 
-	for name in ["fight", "rest", "feint"]:
-		if not labels.has(name):
-			problems.append("missing lane label " + name)
-		else:
-			var ly: float = labels[name].position.y
-			if ly < 506.0:
-				problems.append("lane label %s at y=%.0f overlaps the track" % [name, ly])
-			if ly + labels[name].size.y > 648.0:
-				problems.append("lane label %s falls off the screen" % name)
+	# The lane words were cut on request: the rail and the keycaps carry the
+	# meaning now, so none of them may come back.
+	for name in ["fight", "rest", "feint", "ATTACK", "REST", "FEINT"]:
+		if labels.has(name):
+			problems.append("lane word %s should have been removed" % name)
 
 	if b._beat_dots.size() != 4:
 		problems.append("expected 4 beat dots, got %d" % b._beat_dots.size())
-	if b._lane_glow.size() != 3:
-		problems.append("expected 3 lane glows, got %d" % b._lane_glow.size())
+	if b._lane_glow.size() != 4:
+		problems.append("expected 4 lane glows, got %d" % b._lane_glow.size())
 	if b._pbar_fill == null or b._pbar_fill.texture == null:
 		problems.append("player health bar has no fill texture")
 	if b._ebar_fill == null or b._ebar_fill.texture == null:

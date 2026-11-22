@@ -17,15 +17,18 @@ const HP_DIR := "res://Assets/UI/Health_Bar/"
 const ATTACK := 0
 const IDLE := 1
 const FEINT := 2
+## The fourth rail: a heavy strike that lands harder than the rest.
+const HEAVY := 3
+const LANES := 4
 
-# Vertical highway: three lanes, notes fall from the top to the judge line.
-const TRACK_X := 366.0
-const TRACK_W := 420.0
-const LANE_W := 140.0
+# Vertical highway: four lanes, notes fall from the top to the judge line.
+const TRACK_X := 344.0
+const TRACK_W := 464.0
+const LANE_W := 116.0
 const TRACK_TOP := 112.0
 const JUDGE_Y := 506.0
 const NOTE_SIZE := 64.0
-const LANE_CENTER := [436.0, 576.0, 716.0]
+const LANE_CENTER := [402.0, 518.0, 634.0, 750.0]
 const LEAD := 3.0
 ## How long the YOUR TURN splash stays on screen, fade-in and fade-out included.
 const TURN_BANNER_SEC := 2.0
@@ -43,13 +46,13 @@ const BAR_H := 24.0
 const BAR_X := 48.0
 const BAR_Y := 86.0
 const BAR_FRAME_W := 320.0
-const ROW_NAMES := ["fight", "rest", "feint"]
-const ROW_COLORS := [Color("#d42434"), Color("#f2eef7"), Color("#9a6cf0")]
+const ROW_COLORS := [Color("#d42434"), Color("#f2eef7"), Color("#9a6cf0"), Color("#f0b429")]
 const RED := Color("#d42434")
 const TEAL := Color("#4fead1")
 const CYAN := Color("#4fead1")
 # Judgement SFX: one hit thud per lane, a perfect sparkle, and a dull miss.
-const SFX_HIT := ["res://audio/sfx/hit_attack.wav", "res://audio/sfx/hit_rest.wav", "res://audio/sfx/hit_feint.wav"]
+const SFX_HIT := ["res://audio/sfx/hit_attack.wav", "res://audio/sfx/hit_rest.wav",
+	"res://audio/sfx/hit_feint.wav", "res://audio/sfx/hit_attack.wav"]
 const SFX_PERFECT := "res://audio/sfx/perfect.wav"
 const SFX_MISS := "res://audio/sfx/miss.wav"
 const SFX_POOL := 4
@@ -85,8 +88,6 @@ var _total_misses := 0
 var _total_feints := 0
 var _penalty := 1
 var _feedback: Label
-## One-time how-to line, only during the first section.
-var _howto: Label
 var _combo_label: Label
 var _hit_line: ColorRect
 var _hit_glow: ColorRect
@@ -279,6 +280,10 @@ func _note_tex(kind: int) -> Texture2D:
 			return _art("note_fight.png")
 		FEINT:
 			return _art("note_feint.png")
+		HEAVY:
+			# No fourth export: the heavy rail reuses the pale note art and is
+			# recoloured gold by the caller, so it never reads as the red strike.
+			return _art("note_rest.png")
 		_:
 			return _art("note_rest.png")
 
@@ -333,7 +338,7 @@ func _build_highway() -> void:
 	_root.add_child(frame)
 
 	var lane_h := JUDGE_Y - TRACK_TOP
-	for i in 3:
+	for i in LANES:
 		var lane_x := TRACK_X + i * LANE_W
 		var glow := ColorRect.new()
 		glow.color = Color(ROW_COLORS[i], 0.0)
@@ -350,13 +355,6 @@ func _build_highway() -> void:
 			div.size = Vector2(1, lane_h)
 			div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_root.add_child(div)
-
-		var name_lbl := _label(ROW_NAMES[i], 16, ROW_COLORS[i])
-		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.position = Vector2(LANE_CENTER[i] - 70, JUDGE_Y + 62)
-		name_lbl.size = Vector2(140, 24)
-		name_lbl.z_index = 5
-		_root.add_child(name_lbl)
 
 	# winged skull crest straddling the highway's top edge, sitting just above
 	# the border and small enough to clear the turn pips
@@ -408,9 +406,11 @@ func _build_highway() -> void:
 		_root.add_child(d)
 		_beat_dots.append(d)
 
-	# judgement keys, one under each lane
-	var keys := ["keycap_f.png", "keycap_g.png", "keycap_h.png"]
-	for i in 3:
+	# judgement keys, one under each lane. The fourth rail has no exported
+	# keycap, so its letter is drawn with the game's own pixel font.
+	var keys := ["keycap_f.png", "keycap_g.png", "keycap_h.png", ""]
+	var letters := ["F", "G", "H", "J"]
+	for i in LANES:
 		var cap := Control.new()
 		cap.position = Vector2(LANE_CENTER[i] - 31.0, JUDGE_Y + 8.0)
 		cap.size = Vector2(62.0, 50.0)
@@ -426,15 +426,22 @@ func _build_highway() -> void:
 		ps.anti_aliasing = false
 		plate.add_theme_stylebox_override("panel", ps)
 		cap.add_child(plate)
-		var letter := TextureRect.new()
-		letter.texture = _key_letter(keys[i])
-		letter.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		letter.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		letter.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-		letter.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		letter.position = Vector2(16.0, 10.0)
-		letter.size = Vector2(30.0, 30.0)
-		cap.add_child(letter)
+		if keys[i] == "":
+			var key_text := _label(letters[i], 26, Color("#f2eef7"))
+			key_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			key_text.position = Vector2(0.0, 8.0)
+			key_text.size = Vector2(62.0, 34.0)
+			cap.add_child(key_text)
+		else:
+			var letter := TextureRect.new()
+			letter.texture = _key_letter(keys[i])
+			letter.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			letter.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			letter.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+			letter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			letter.position = Vector2(16.0, 10.0)
+			letter.size = Vector2(30.0, 30.0)
+			cap.add_child(letter)
 		_root.add_child(cap)
 
 
@@ -446,14 +453,6 @@ func _build_hud() -> void:
 	_feedback.offset_bottom = 456
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
-
-	_howto = _label("F / G / H on the beat   -   the phrase comes back changed", 15, Color("#a9a4b8"))
-	_howto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_howto.anchor_right = 1.0
-	_howto.offset_top = 372
-	_howto.offset_bottom = 398
-	_howto.visible = false
-	_root.add_child(_howto)
 
 	var you := _label("YOU", 16, Color("#f2eef7"))
 	you.offset_left = BAR_X
@@ -803,8 +802,6 @@ func _apply_fills(fill: TextureRect, frac: float) -> void:
 
 func _begin_round() -> void:
 	_round += 1
-	if _howto != null:
-		_howto.visible = _round == 1
 	_demo = _make_pattern(_round)
 	_enter_phase(P.DEMO)
 
@@ -818,24 +815,27 @@ func _begin_round() -> void:
 ## `tier` is how hard the duelist fights: a higher tier adds notes to every
 ## phrase (so the section runs longer) and lands double notes a round earlier.
 ##
+## `hold_beats` is how long the long notes last, in beats: the hard duellists
+## hand you a whole bar to finish.
+##
 ## `bpm` must match tools/gen_battle_music.py: the notes fall on that grid.
 const SPECIES_STYLE := {
-	"rat": {"bpm": 152, "bonus": 1, "tier": 1, "density": 0.95, "offbeat": 0.30,
-		"holds": 0, "rest_bias": 0.00, "answer": "mirror"},
-	"slime": {"bpm": 84, "bonus": 0, "tier": 2, "density": 0.70, "offbeat": 0.05,
-		"holds": 3, "rest_bias": 0.12, "answer": "heavy"},
-	"bat": {"bpm": 138, "bonus": 0, "tier": 2, "density": 0.86, "offbeat": 0.55,
-		"holds": 4, "rest_bias": 0.04, "answer": "echo"},
-	"mushroom": {"bpm": 92, "bonus": -1, "tier": 1, "density": 0.62, "offbeat": 0.10,
-		"holds": 2, "rest_bias": 0.16, "answer": "sparse"},
-	"flying_eye": {"bpm": 126, "bonus": 0, "tier": 2, "density": 0.80, "offbeat": 0.25,
-		"holds": 4, "rest_bias": 0.14, "answer": "retro"},
-	"goblin": {"bpm": 146, "bonus": 1, "tier": 2, "density": 0.92, "offbeat": 0.15,
-		"holds": 0, "rest_bias": 0.00, "answer": "shift"},
-	"mimic": {"bpm": 108, "bonus": 0, "tier": 3, "density": 0.78, "offbeat": 0.40,
-		"holds": 3, "rest_bias": 0.06, "answer": "bait"},
-	"skeleton": {"bpm": 132, "bonus": 0, "tier": 3, "density": 0.88, "offbeat": 0.20,
-		"holds": 2, "rest_bias": 0.03, "answer": "chord"},
+	"rat": {"bpm": 124, "bonus": 1, "tier": 1, "density": 0.95, "offbeat": 0.30,
+		"holds": 0, "hold_beats": 2, "rest_bias": 0.00, "answer": "mirror"},
+	"slime": {"bpm": 128, "bonus": 0, "tier": 2, "density": 0.70, "offbeat": 0.05,
+		"holds": 3, "hold_beats": 3, "rest_bias": 0.12, "answer": "heavy"},
+	"bat": {"bpm": 144, "bonus": 0, "tier": 2, "density": 0.86, "offbeat": 0.55,
+		"holds": 4, "hold_beats": 3, "rest_bias": 0.04, "answer": "echo"},
+	"mushroom": {"bpm": 112, "bonus": -1, "tier": 1, "density": 0.62, "offbeat": 0.10,
+		"holds": 2, "hold_beats": 2, "rest_bias": 0.16, "answer": "sparse"},
+	"flying_eye": {"bpm": 134, "bonus": 0, "tier": 2, "density": 0.80, "offbeat": 0.25,
+		"holds": 4, "hold_beats": 3, "rest_bias": 0.14, "answer": "retro"},
+	"goblin": {"bpm": 140, "bonus": 1, "tier": 2, "density": 0.92, "offbeat": 0.15,
+		"holds": 0, "hold_beats": 2, "rest_bias": 0.00, "answer": "shift"},
+	"mimic": {"bpm": 156, "bonus": 0, "tier": 3, "density": 0.78, "offbeat": 0.40,
+		"holds": 3, "hold_beats": 4, "rest_bias": 0.06, "answer": "bait"},
+	"skeleton": {"bpm": 150, "bonus": 0, "tier": 3, "density": 0.88, "offbeat": 0.20,
+		"holds": 2, "hold_beats": 4, "rest_bias": 0.03, "answer": "chord"},
 }
 
 
@@ -860,7 +860,9 @@ func _set_pattern(arr: Array) -> void:
 	_pattern = arr
 	_pattern_last_beat = 0.0
 	for n in arr:
-		_pattern_last_beat = maxf(_pattern_last_beat, float(n["beat"]))
+		# A long note runs to its tail, so the phrase must wait for it.
+		_pattern_last_beat = maxf(_pattern_last_beat,
+				float(n["beat"]) + float(n.get("hold", 0.0)))
 
 
 ## How long a phrase may run, in beats. Harder duelists get longer sections: two
@@ -887,10 +889,12 @@ func _make_pattern(r: int) -> Array:
 			continue
 		var t := ATTACK
 		var roll := randf()
-		if roll < 0.26 + rest_bias:
+		if roll < 0.24 + rest_bias:
 			t = IDLE
-		elif roll < 0.46:
+		elif roll < 0.42:
 			t = FEINT
+		elif roll < 0.50:
+			t = HEAVY
 		var beat := float(i)
 		if i > 0 and randf() < offbeat:
 			beat += 0.5
@@ -906,17 +910,54 @@ func _make_pattern(r: int) -> Array:
 		if int(arr[i]["type"]) != ATTACK:
 			arr[i]["type"] = ATTACK
 			attacks += 1
-	# Long notes: every N-th attack, never the last one, so the tail always has
-	# a following beat to land against.
+	# Long notes: one bar you can actually finish. The candidate with the most
+	# room in its lane wins, so the tail never lands on the next note.
 	var every := int(style.get("holds", 3))
-	var seen := 0
-	for i in arr.size():
-		if int(arr[i]["type"]) != ATTACK:
-			continue
-		seen += 1
-		if every > 0 and seen % every == 1 and i < arr.size() - 1:
-			arr[i]["hold"] = 1.0
+	var hold_beats := float(style.get("hold_beats", 2))
+	if every > 0:
+		var best := -1
+		var best_room := 0.0
+		var seen := 0
+		for i in arr.size():
+			if int(arr[i]["type"]) != ATTACK:
+				continue
+			seen += 1
+			if seen % every != 1 or i >= arr.size() - 1:
+				continue
+			var room := _lane_room(arr, i)
+			if room > best_room:
+				best_room = room
+				best = i
+		if best >= 0:
+			arr[best]["hold"] = minf(hold_beats, maxf(1.0, best_room - 0.5))
+	_fit_holds(arr)
 	return arr
+
+
+## Beats of clear space in a note's own lane before the next note lands there.
+func _lane_room(arr: Array, i: int) -> float:
+	var beat := float(arr[i]["beat"])
+	for j in range(i + 1, arr.size()):
+		if int(arr[j]["type"]) != int(arr[i]["type"]):
+			continue
+		return float(arr[j]["beat"]) - beat
+	return 99.0
+
+
+## Keeps every long note clear of the next note in its own lane, so a bar can
+## always be finished without cutting off a note the player still owes.
+func _fit_holds(arr: Array) -> void:
+	for i in arr.size():
+		if not arr[i].has("hold"):
+			continue
+		var beat := float(arr[i]["beat"])
+		var length := float(arr[i]["hold"])
+		for j in range(i + 1, arr.size()):
+			if int(arr[j]["type"]) != int(arr[i]["type"]):
+				continue
+			length = minf(length, maxf(1.0, float(arr[j]["beat"]) - beat - 0.5))
+			break
+		arr[i]["hold"] = length
 
 
 ## The player's section: the same phrase, answered - never echoed. Which
@@ -928,7 +969,7 @@ func _make_reply(demo: Array, r: int) -> Array:
 		"mirror":
 			# Attack answers feint, and the other way round.
 			for n in demo:
-				out.append(_note(float(n["beat"]), 2 - int(n["type"]),
+				out.append(_note(float(n["beat"]), LANES - 1 - int(n["type"]),
 						float(n.get("hold", 0.0))))
 		"retro":
 			# Played backwards: the phrase lands tail-first.
@@ -942,7 +983,7 @@ func _make_reply(demo: Array, r: int) -> Array:
 			for n in demo:
 				var t := int(n["type"])
 				out.append(_note(float(n["beat"]), t))
-				out.append(_note(float(n["beat"]) + 0.5, (t + 1) % 3))
+				out.append(_note(float(n["beat"]) + 0.5, (t + 1) % LANES))
 		"sparse":
 			# Half the phrase, but every survivor is a long note.
 			for i in demo.size():
@@ -957,7 +998,7 @@ func _make_reply(demo: Array, r: int) -> Array:
 				var b := float(demo[i]["beat"])
 				var t := int(demo[i]["type"])
 				out.append(_note(b, t))
-				out.append(_note(b, (t + 2) % 3))
+				out.append(_note(b, (t + 2) % LANES))
 		"bait":
 			# Rests and feints trade keys: the rail has to be read again, memory
 			# of the demo's keys will get you hit.
@@ -971,10 +1012,10 @@ func _make_reply(demo: Array, r: int) -> Array:
 		"chord":
 			# Marched back mirrored, then struck in a pair at the end.
 			for n in demo:
-				out.append(_note(float(n["beat"]), 2 - int(n["type"])))
+				out.append(_note(float(n["beat"]), LANES - 1 - int(n["type"])))
 			if not out.is_empty():
 				var last: Dictionary = out[out.size() - 1]
-				out.append(_note(float(last["beat"]), (int(last["type"]) + 1) % 3))
+				out.append(_note(float(last["beat"]), (int(last["type"]) + 1) % LANES))
 		_:
 			# Shifted onto the off-beat, with a grace note on the end.
 			for n in demo:
@@ -990,7 +1031,7 @@ func _make_reply(demo: Array, r: int) -> Array:
 		var extra: Array = []
 		for n in out:
 			if randf() < double_odds:
-				var t := (int(n["type"]) + 1) % 3
+				var t := (int(n["type"]) + 1) % LANES
 				if not _has_note(out, float(n["beat"]), t):
 					extra.append(_note(float(n["beat"]), t))
 		out.append_array(extra)
@@ -999,12 +1040,13 @@ func _make_reply(demo: Array, r: int) -> Array:
 			var i := out.size() / 2
 			var base: Dictionary = out[i]
 			for step in [1, 2]:
-				var t: int = (int(base["type"]) + int(step)) % 3
+				var t: int = (int(base["type"]) + int(step)) % LANES
 				if not _has_note(out, float(base["beat"]), t):
 					out.append(_note(float(base["beat"]), t))
 					break
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a["beat"]) < float(b["beat"]))
+	_fit_holds(out)
 	# A reply that happens to match the phrase is a copy: nudge one note off the
 	# grid so the section can never be played from memory alone.
 	if _signature(out) == _signature(demo) and not out.is_empty():
@@ -1063,6 +1105,8 @@ func _build_notes() -> void:
 		var art := TextureRect.new()
 		art.name = "Glyph"
 		art.texture = _note_tex(t)
+		if t == HEAVY:
+			art.modulate = Color(1.0, 0.82, 0.35)
 		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -1281,8 +1325,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if not _active or _phase != P.PLAYER:
 		return
-	# Each lane has its own judgement key: F=attack, G=rest, H=feint. Space/Enter
-	# (ui_accept) stays an alias for F so muscle memory still hits attack notes.
+	# Each lane has its own judgement key: F=attack, G=rest, H=feint, J=heavy.
+	# Space/Enter (ui_accept) stays an alias for F so muscle memory still hits
+	# attack notes.
 	if event is InputEventKey and not event.echo:
 		var lane := -1
 		match event.physical_keycode:
@@ -1292,6 +1337,8 @@ func _input(event: InputEvent) -> void:
 				lane = IDLE
 			KEY_H:
 				lane = FEINT
+			KEY_J:
+				lane = HEAVY
 		if lane >= 0 and event.pressed:
 			get_viewport().set_input_as_handled()
 			_try_hit(lane, event.physical_keycode)
@@ -1347,8 +1394,11 @@ func _try_hit(lane: int, key: int = 0) -> void:
 	if _hold_note >= 0:
 		_break_hold()
 	_phase_hits += 1
-	# Every lane is a normal note now: press its key on the beat, it lands.
+	# Every lane is a normal note now: press its key on the beat, it lands. The
+	# heavy rail hits harder, so it is worth reading the rails properly.
 	var dmg := 2 if best_dt <= PERFECT else 1
+	if lane == HEAVY:
+		dmg += 1
 	_hits += 1
 	_total_hits += 1
 	_combo += 1

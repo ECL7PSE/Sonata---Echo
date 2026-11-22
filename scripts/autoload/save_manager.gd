@@ -36,7 +36,6 @@ var _hooked_player: Node = null
 ## get_tree() is already gone.
 func _process(_delta: float) -> void:
 	_ensure_map()
-	_ensure_tutorial()
 	_ensure_shade()
 	_ensure_pending_save()
 	if _bench != null and is_instance_valid(_bench) and _hooked_player != null \
@@ -88,23 +87,6 @@ func take_shade() -> int:
 
 ## The map overlay lives here so Tab works in every room without a HUD to own
 ## it. Created only once a floor with a player is up, never over the menu.
-var _tutorial: Node = null
-
-
-## First-run prompts, floor 1 only, until the player has seen them once.
-func _ensure_tutorial() -> void:
-	if _tutorial != null and is_instance_valid(_tutorial):
-		return
-	if GameState.tutorial_done or GameState.depth > 1:
-		return
-	if not is_inside_tree() or get_tree().current_scene == null:
-		return
-	if _find_player(get_tree().current_scene) == null:
-		return
-	_tutorial = load("res://scripts/ui/tutorial.gd").new()
-	add_child(_tutorial)
-
-
 func _ensure_map() -> void:
 	if _map != null and is_instance_valid(_map):
 		return
@@ -193,7 +175,6 @@ func save_run(player: Node) -> void:
 	cfg.set_value("run", "echo_levels", GameState.echo_levels)
 	cfg.set_value("run", "explored", GameState.explored)
 	cfg.set_value("run", "boss_rooms", GameState.boss_rooms)
-	cfg.set_value("run", "tutorial_done", GameState.tutorial_done)
 	cfg.set_value("run", "shade_coins", shade_coins)
 	cfg.set_value("run", "shade_scene", shade_scene)
 	cfg.set_value("run", "shade_pos", shade_pos)
@@ -228,7 +209,6 @@ func load_save() -> void:
 		GameState.echo_levels = lv.duplicate()
 	GameState.explored = _strings(cfg.get_value("run", "explored", []))
 	GameState.boss_rooms = _strings(cfg.get_value("run", "boss_rooms", []))
-	GameState.tutorial_done = bool(cfg.get_value("run", "tutorial_done", false))
 	shade_coins = int(cfg.get_value("run", "shade_coins", 0))
 	shade_scene = str(cfg.get_value("run", "shade_scene", ""))
 	shade_pos = cfg.get_value("run", "shade_pos", Vector2.ZERO)

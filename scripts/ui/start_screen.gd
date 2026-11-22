@@ -13,7 +13,7 @@ const ART_DIR := CanvaUI.ART_DIR
 
 ## On-screen width of each image in game pixels (1152x648 space). Height
 ## follows the image's own aspect ratio, so this works whatever size the PNGs
-## were exported at. Taken from the Canva design (1920 wide) x 0.6.
+	## were exported at. Taken from the Canva design (1920 wide) x 0.6.
 const SKULL_W := CanvaUI.SKULL_W
 const TITLE_W := 275.0
 const CORNER_W := 80.0
@@ -31,9 +31,6 @@ const BUTTON_FONT_SIZE := 20
 # Distance of the corner flourishes from the screen edges.
 const CORNER_INSET := Vector2(118.0, 58.0)
 
-const HELP_TEXT := "MOVE  WASD / Arrows      ATTACK  K / Space      FULLSCREEN  F11\n\nIN A DUEL\nF  left lane      G  middle lane      H  right lane\n\nWatch the enemy's section, then play it back:\npress each lane's key as its note crosses the line.\nEvery note lands and hurts the enemy. Build a combo."
-
-var _help: Control
 var _settings: Control
 var _buttons: Array[Button] = []
 var _fullscreen_btn: Button
@@ -106,12 +103,10 @@ func _build_menu() -> void:
 
 	_add_button(box, "continue", "continue", reveal)
 	_add_button(box, "new game", "new", reveal)
-	_add_button(box, "controls", "how", reveal)
 	_add_button(box, "restart", "restart", reveal)
 	_add_button(box, "exit", "exit", reveal)
 
 	_add_gear(root, reveal)
-	_build_help(root)
 	_build_settings(root)
 	_stagger(reveal)
 	call_deferred("_focus_first")
@@ -199,12 +194,8 @@ func _on_menu(action: String) -> void:
 			SaveManager.clear_save()
 			GameState.reset()
 			_start_game()
-		"how":
-			_help.visible = true
-			_settings.visible = false
 		"settings":
 			_settings.visible = true
-			_help.visible = false
 			_sync_settings()
 			if _fullscreen_btn != null:
 				_fullscreen_btn.grab_focus()
@@ -220,38 +211,19 @@ func _start_game() -> void:
 
 # ---------------------------------------------------------------- overlays
 
-func _build_help(root: Control) -> void:
-	_help = _overlay(root)
-	var panel := _panel(_help)
+## A full-screen modal page: dimmed backdrop plus whatever the caller puts on
+## top. Hidden until the caller shows it.
+func _overlay(root: Control) -> Control:
+	var page := Control.new()
+	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	page.visible = false
+	root.add_child(page)
 
-	var heading := GothUI.label("CONTROLS", 32, GothUI.CYAN)
-	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	heading.anchor_right = 1.0
-	heading.offset_top = 40
-	heading.offset_bottom = 92
-	panel.add_child(heading)
-
-	var rule := GothUI.ornament(GothUI.ORN_DIVIDER, GothUI.BORDER, GothUI.CRIMSON)
-	rule.anchor_right = 1.0
-	rule.anchor_top = 0.0
-	rule.anchor_bottom = 0.0
-	rule.offset_left = 120
-	rule.offset_right = -120
-	rule.offset_top = 96
-	rule.offset_bottom = 114
-	panel.add_child(rule)
-
-	var body := GothUI.label(HELP_TEXT, 16, GothUI.TEXT)
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	body.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	body.anchor_right = 1.0
-	body.offset_left = 60
-	body.offset_right = -60
-	body.offset_top = 124
-	body.offset_bottom = 358
-	panel.add_child(body)
-
-	_add_close(panel, _close_help)
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.01, 0.04, 0.86)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	page.add_child(dim)
+	return page
 
 
 func _build_settings(root: Control) -> void:
@@ -318,52 +290,6 @@ func _sync_settings() -> void:
 	_fullscreen_btn.text = "full screen: on" if Settings.fullscreen else "full screen: off"
 
 
-func _overlay(root: Control) -> Control:
-	var page := Control.new()
-	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	page.visible = false
-	root.add_child(page)
-
-	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.01, 0.04, 0.86)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	page.add_child(dim)
-	return page
-
-
-func _panel(host: Control) -> Panel:
-	var panel := Panel.new()
-	panel.anchor_left = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -380
-	panel.offset_right = 380
-	panel.offset_top = -189
-	panel.offset_bottom = 189
-	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	GothUI.dress(panel, 10)
-	host.add_child(panel)
-	return panel
-
-
-func _add_close(panel: Control, callback: Callable) -> void:
-	var close := GothUI.close_button(40.0)
-	close.anchor_left = 1.0
-	close.anchor_right = 1.0
-	close.offset_left = -72
-	close.offset_right = -32
-	close.offset_top = 22
-	close.offset_bottom = 62
-	close.pressed.connect(callback)
-	panel.add_child(close)
-
-
-func _close_help() -> void:
-	_help.visible = false
-	_focus_first()
-
-
 func _close_settings() -> void:
 	_settings.visible = false
 	_focus_first()
@@ -374,7 +300,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _settings != null and _settings.visible:
 		_close_settings()
-		get_viewport().set_input_as_handled()
-	elif _help != null and _help.visible:
-		_close_help()
 		get_viewport().set_input_as_handled()

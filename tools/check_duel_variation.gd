@@ -63,7 +63,7 @@ func _initialize() -> void:
 		for arr in [demo, reply]:
 			for n in arr:
 				var t: int = int(n["type"])
-				_ok(t >= 0 and t <= 2, "%s note has lane %d" % [key, t])
+				_ok(t >= 0 and t <= 3, "%s note has lane %d" % [key, t])
 				_ok(float(n["beat"]) >= 0.0, "%s note lands before the section" % key)
 
 		# Later rounds add double notes: two lanes on one beat.
@@ -75,6 +75,29 @@ func _initialize() -> void:
 						and int(late[i]["type"]) != int(late[j]["type"]):
 					paired = true
 		_ok(paired, "%s never lands a double note by round 6" % key)
+
+		# The long notes: a bar you can finish, and the phrase waits for its tail.
+		var longest := 0.0
+		var tail_beat := 0.0
+		for n in demo:
+			var hold := float(n.get("hold", 0.0))
+			longest = maxf(longest, hold)
+			tail_beat = maxf(tail_beat, float(n["beat"]) + hold)
+		if int(style.get("holds", 0)) > 0:
+			# Over a handful of phrases the duelist must hand out a real bar.
+			var best := longest
+			for r2 in range(3, 9):
+				var phrase2: Array = b.call("_make_pattern", r2)
+				for n2 in phrase2:
+					best = maxf(best, float(n2.get("hold", 0.0)))
+			_ok(best >= 2.0,
+					"%s promises long notes but the longest is %.1f beats" % [key, best])
+			_ok(best <= float(style.get("hold_beats", 2)) + 0.01,
+					"%s has a %.1f beat long note, longer than its %.1f beat bar"
+					% [key, best, float(style.get("hold_beats", 2))])
+		b.call("_set_pattern", demo)
+		_ok(float(b.get("_pattern_last_beat")) >= tail_beat - 0.01,
+				"%s ends its phrase before the long note finishes" % key)
 
 		# The rail runs on the same grid as the generated track.
 		var path: String = MUSIC_DIR + key + ".wav"
@@ -95,6 +118,16 @@ func _initialize() -> void:
 
 	_ok(bpms.size() == keys.size(),
 			"%d of %d species share a tempo" % [keys.size() - bpms.size(), keys.size()])
+
+	# Four rails: every lane must turn up in the phrases, or a key is dead.
+	var seen_lanes := {}
+	mock.species = "skeleton"
+	for r in range(1, 9):
+		var phrase: Array = b.call("_make_pattern", r)
+		for n in phrase:
+			seen_lanes[int(n["type"])] = true
+	for lane in range(4):
+		_ok(seen_lanes.has(lane), "lane %d never appears in any phrase" % lane)
 
 	# The answer ignores memory: swapping lanes is a real change of keys.
 	mock.species = "mimic"

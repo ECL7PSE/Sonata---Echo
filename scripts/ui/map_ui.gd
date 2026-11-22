@@ -196,14 +196,6 @@ func _build_tabs() -> void:
 	next.pressed.connect(turn.bind(1))
 	_panel.add_child(next)
 
-	var hint := GothUI.label("Q / E turn the page    TAB closes", 12, GothUI.DIM)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hint.anchor_right = 1.0
-	hint.offset_top = 550
-	hint.offset_bottom = 584
-	_panel.add_child(hint)
-
 
 func _refresh() -> void:
 	_title.text = "MAP" if _page == PAGE_MAP else "ECHOES"
@@ -399,13 +391,6 @@ func _refresh_echoes() -> void:
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_echoes_box.add_child(empty)
-
-		var hint := GothUI.label("echoes are bought at a bench", 12, GothUI.DIM)
-		hint.position = Vector2(0, 182)
-		hint.size = Vector2(500, 20)
-		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_echoes_box.add_child(hint)
 		return
 
 	# What you own, two columns.

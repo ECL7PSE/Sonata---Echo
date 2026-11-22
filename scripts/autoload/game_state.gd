@@ -18,8 +18,6 @@ var floor_choice := ""
 var coin_value := 1
 ## Set by the REST door: the next floor saves the run on arrival.
 var pending_save := false
-## Set once the first-run prompts have finished, so they never repeat.
-var tutorial_done := false
 
 ## Upgrade level per stat, 0..UPGRADE_MAX. Also KEPT across death.
 var upgrades := {"hp": 0, "atk": 0, "spd": 0}
