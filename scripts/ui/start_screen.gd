@@ -13,7 +13,7 @@ const ART_DIR := CanvaUI.ART_DIR
 
 ## On-screen width of each image in game pixels (1152x648 space). Height
 ## follows the image's own aspect ratio, so this works whatever size the PNGs
-	## were exported at. Taken from the Canva design (1920 wide) x 0.6.
+		## were exported at. Taken from the Canva design (1920 wide) x 0.6.
 const SKULL_W := CanvaUI.SKULL_W
 const TITLE_W := 275.0
 const CORNER_W := 80.0
@@ -32,6 +32,7 @@ const BUTTON_FONT_SIZE := 20
 const CORNER_INSET := Vector2(118.0, 58.0)
 
 var _settings: Control
+var _controls: Control
 var _buttons: Array[Button] = []
 var _fullscreen_btn: Button
 
@@ -104,9 +105,11 @@ func _build_menu() -> void:
 	_add_button(box, "continue", "continue", reveal)
 	_add_button(box, "new game", "new", reveal)
 	_add_button(box, "restart", "restart", reveal)
+	_add_button(box, "controls", "controls", reveal)
 	_add_button(box, "exit", "exit", reveal)
 
 	_add_gear(root, reveal)
+	_build_controls(root)
 	_build_settings(root)
 	_stagger(reveal)
 	call_deferred("_focus_first")
@@ -199,6 +202,8 @@ func _on_menu(action: String) -> void:
 			_sync_settings()
 			if _fullscreen_btn != null:
 				_fullscreen_btn.grab_focus()
+		"controls":
+			_controls.visible = true
 		"exit":
 			get_tree().quit()
 
@@ -224,6 +229,44 @@ func _overlay(root: Control) -> Control:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	page.add_child(dim)
 	return page
+
+
+## The control card: keys and what they do, one line each. No tutorial prose -
+## just the cheat sheet the menu used to be missing.
+func _build_controls(root: Control) -> void:
+	_controls = _overlay(root)
+	var panel := CanvaUI.modal_panel(_controls, Vector2(620.0, 430.0))
+
+	CanvaUI.heading(panel, ART_DIR + "controls_title.png", "Controls", 50.0, 52.0, 36)
+
+	var rows := [
+		["W A S D", "move"],
+		["K", "strike"],
+		["E", "use, bench, doors"],
+		["TAB", "map    (Q / E turn the page)"],
+		["F G H J", "duel rails"],
+		["ESC", "back"],
+	]
+	var y := 122.0
+	for r in rows:
+		var keys := GothUI.label(str(r[0]), 22, GothUI.CYAN)
+		keys.position = Vector2(72, y)
+		keys.size = Vector2(170, 28)
+		panel.add_child(keys)
+		var what := GothUI.label(str(r[1]), 18, GothUI.TEXT)
+		what.position = Vector2(252, y + 4)
+		what.size = Vector2(320, 24)
+		panel.add_child(what)
+		y += 44.0
+
+	var x_button := CanvaUI.plain_close(40.0, _close_controls)
+	x_button.anchor_left = 1.0
+	x_button.anchor_right = 1.0
+	x_button.offset_left = -65.0
+	x_button.offset_right = -25.0
+	x_button.offset_top = 26.0
+	x_button.offset_bottom = 66.0
+	panel.add_child(x_button)
 
 
 func _build_settings(root: Control) -> void:
@@ -295,8 +338,17 @@ func _close_settings() -> void:
 	_focus_first()
 
 
+func _close_controls() -> void:
+	_controls.visible = false
+	_focus_first()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
+		return
+	if _controls != null and _controls.visible:
+		_close_controls()
+		get_viewport().set_input_as_handled()
 		return
 	if _settings != null and _settings.visible:
 		_close_settings()

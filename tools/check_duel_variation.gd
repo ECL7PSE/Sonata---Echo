@@ -25,6 +25,12 @@ func _ok(cond: bool, msg: String) -> void:
 		_fails.append(msg)
 
 
+## The phrase length the duel uses: whole bars, one to three of them.
+func _bars_for(bonus: int, tier: int, round_num: int) -> int:
+	var extra := maxi(1, tier) - 1
+	return clampi(1 + (round_num + bonus + extra) / 4, 1, 3) * 4
+
+
 func _initialize() -> void:
 	seed(4242)
 	# load(), not preload(): battle.gd reaches the Audio autoload, which only
@@ -46,12 +52,14 @@ func _initialize() -> void:
 		bpms[int(style["bpm"])] = true
 		_ok(style.has("answer"), "%s has no answer style" % key)
 
-		# Difficulty: every species declares a tier, and it lengthens the section.
+		# Difficulty: every species declares a tier, and it lengthens the section
+		# in whole bars, so the phrase ends on the music's bar line.
 		var tier := int(style.get("tier", 0))
 		_ok(tier >= 1 and tier <= 3, "%s has tier %d" % [key, tier])
-		var want := clampi(4 + 1 + int(style.get("bonus", 0)) + tier - 1, 3, 12)
+		var want := _bars_for(int(style.get("bonus", 0)), tier, 1)
 		var got := int(b.call("_phrase_len", 1))
 		_ok(got == want, "%s phrase is %d beats at round 1, expected %d" % [key, got, want])
+		_ok(got % 4 == 0, "%s phrase is %d beats, not whole bars" % [key, got])
 
 		# The enemy's phrase and the player's answer must not be the same section.
 		var demo: Array = b.call("_make_pattern", 2)
@@ -129,23 +137,28 @@ func _initialize() -> void:
 	for lane in range(4):
 		_ok(seen_lanes.has(lane), "lane %d never appears in any phrase" % lane)
 
-	# The answer ignores memory: swapping lanes is a real change of keys.
+	# The answer ignores memory: swapping lanes is a real change of keys. The
+	# mimic trades rest and feint, so look over a few rounds - a single phrase
+	# can be all strikes.
 	mock.species = "mimic"
 	mock.boss = false
-	var demo_m: Array = b.call("_make_pattern", 1)
-	var reply_m: Array = b.call("_make_reply", demo_m, 1)
 	var moved := false
-	for i in mini(demo_m.size(), reply_m.size()):
-		if int(demo_m[i]["type"]) != int(reply_m[i]["type"]):
-			moved = true
+	for r in range(1, 7):
+		var demo_m: Array = b.call("_make_pattern", r)
+		var reply_m: Array = b.call("_make_reply", demo_m, r)
+		for i in mini(demo_m.size(), reply_m.size()):
+			if int(demo_m[i]["type"]) != int(reply_m[i]["type"]):
+				moved = true
 	_ok(moved, "the mimic's answer kept every key the same")
 
-	# A boss extends the phrase on top of its species tier.
+	# A boss extends the phrase on top of its species tier - in whole bars.
 	mock.species = "skeleton"
 	mock.boss = false
 	var plain: int = b.call("_phrase_len", 1)
 	mock.boss = true
-	_ok(int(b.call("_phrase_len", 1)) == plain + 1, "a boss must get a longer section")
+	var boss_len: int = b.call("_phrase_len", 1)
+	_ok(boss_len >= plain and (boss_len - plain) % 4 == 0,
+			"a boss must get a longer section in whole bars (%d vs %d)" % [boss_len, plain])
 	mock.boss = false
 
 	# Harder duelists pair their notes earlier: a tier 3 answers in chords by

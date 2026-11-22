@@ -17,14 +17,22 @@ const PAGE_ECHOES := 1
 
 ## Screen pixels per dungeon grid cell on the parchment.
 const CELL := 10.4
+## The page area the parchment lives in, inside the 600x600 panel.
+const MAP_TOP := 74.0
+const MAP_W := 600.0
+const MAP_H := 420.0
+## Ink margin between the sheet edge and the first room.
+const PAD := 22.0
 
 var _panel: Panel
 var _title: Label
 var _map_page: Control
 var _echo_page: Control
 var _board: Control
+var _parchment: ColorRect
 var _echoes_box: Control
 var _legend: Label
+var _legend2: Label
 var _worn: Label
 var _coins: Label
 var _page := PAGE_MAP
@@ -143,27 +151,34 @@ func _build_map_page() -> void:
 	_map_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(_map_page)
 
-	# Parchment: the 43x43 grid at CELL px per cell, centred in the panel.
-	var board_size := Vector2(43, 43) * CELL
-	var parchment := ColorRect.new()
-	parchment.color = Color("#d9c8a3")
-	parchment.position = Vector2((600.0 - board_size.x) * 0.5, 74.0)
-	parchment.size = board_size
-	parchment.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_page.add_child(parchment)
+	# Parchment: the sheet is sized to the dungeon it carries, so there is no
+	# blank tan half and nothing spills off the paper.
+	_parchment = ColorRect.new()
+	_parchment.color = Color("#d9c8a3")
+	_parchment.position = Vector2(0.0, MAP_TOP)
+	_parchment.size = Vector2(MAP_W, MAP_H)
+	_parchment.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_page.add_child(_parchment)
 
 	_board = Control.new()
-	_board.position = parchment.position
-	_board.size = parchment.size
+	_board.position = _parchment.position
+	_board.size = _parchment.size
 	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_page.add_child(_board)
 
 	_legend = GothUI.label("outline = unexplored    filled = explored    X = the way down", 12, GothUI.DIM)
 	_legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_legend.anchor_right = 1.0
-	_legend.offset_top = 528
-	_legend.offset_bottom = 548
+	_legend.offset_top = 500
+	_legend.offset_bottom = 518
 	_map_page.add_child(_legend)
+
+	_legend2 = GothUI.label("gold = chest    red = boss", 12, GothUI.DIM)
+	_legend2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_legend2.anchor_right = 1.0
+	_legend2.offset_top = 518
+	_legend2.offset_bottom = 536
+	_map_page.add_child(_legend2)
 
 
 func _build_echo_page() -> void:
@@ -230,18 +245,24 @@ func _refresh_map() -> void:
 	var bell: bool = bool(state.call("echo_on", "grave_bell")) if state != null else false
 	var bell_level: int = int(state.call("echo_level", "grave_bell")) if state != null else 0
 
-	# Fit the dungeon's footprint to the page.
+	# Fit the dungeon's footprint to the page, then let the sheet hug it.
 	var bounds := Rect2i()
 	var names: Array = rooms.keys()
 	for i in names.size():
 		var r: Rect2i = rooms[names[i]]
 		bounds = r if i == 0 else bounds.merge(r)
-	var pad := 22.0
-	var area := Vector2(43, 43) * CELL - Vector2(pad, pad) * 2.0
+	var area := Vector2(MAP_W, MAP_H) - Vector2(PAD, PAD) * 2.0
 	_k = minf(area.x / maxf(1.0, float(bounds.size.x)),
 		area.y / maxf(1.0, float(bounds.size.y)))
 	_base = Vector2(bounds.position)
-	_origin = Vector2(pad, pad) + (area - Vector2(bounds.size) * _k) * 0.5
+	# The sheet is the drawing plus its ink margin, centred on the page.
+	var sheet := Vector2(bounds.size) * _k + Vector2(PAD, PAD) * 2.0
+	var sheet_pos := Vector2((MAP_W - sheet.x) * 0.5, MAP_TOP + (MAP_H - sheet.y) * 0.5)
+	_parchment.position = sheet_pos
+	_parchment.size = sheet
+	_board.position = sheet_pos
+	_board.size = sheet
+	_origin = Vector2(PAD, PAD)
 	_world_scale = float(builder.GRID) * float(builder.SCALE)
 
 	const INK := Color("#2a2118")
@@ -278,13 +299,14 @@ func _refresh_map() -> void:
 				INK if seen else INK_SOFT, 10)
 
 	# Grave Bell at +2 adds a running tally of everything still standing.
+	_legend.text = "outline = unexplored    filled = explored    X = the way down"
 	if bell and bell_level > 1:
 		var total := 0
 		for room_name in names:
 			total += _enemies_left(room_name)
-		_legend.text = "outline = unexplored    filled = explored    X = the way down    gold = chest    red = boss    enemies left: %d" % total
+		_legend2.text = "gold = chest    red = boss    enemies left: %d" % total
 	else:
-		_legend.text = "outline = unexplored    filled = explored    X = the way down    gold = chest    red = boss"
+		_legend2.text = "gold = chest    red = boss"
 
 	# A gold dot on every chest that is still waiting to be opened. This is the
 	# map paying off: the loot is where the dot is.

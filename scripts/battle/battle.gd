@@ -29,7 +29,9 @@ const TRACK_TOP := 112.0
 const JUDGE_Y := 506.0
 const NOTE_SIZE := 64.0
 const LANE_CENTER := [402.0, 518.0, 634.0, 750.0]
-const LEAD := 3.0
+## The count-in before the first note of a phrase, in beats. One whole bar, so
+## every phrase lands on the music's bar lines.
+const LEAD := 4.0
 ## How long the YOUR TURN splash stays on screen, fade-in and fade-out included.
 const TURN_BANNER_SEC := 2.0
 const TURN_FADE_IN := 0.3
@@ -41,11 +43,12 @@ const BEAT_DOTS := 4
 const WINDOW := 0.24
 const PERFECT := 0.10
 # Duel HP bars: a red pill fill, with the skull frame laid over the player side.
-const BAR_W := 290.0
-const BAR_H := 24.0
-const BAR_X := 48.0
-const BAR_Y := 86.0
-const BAR_FRAME_W := 320.0
+# The pair sits centred above the rail, so both duelsists are read in one place.
+const BAR_W := 210.0
+const BAR_H := 18.0
+const BAR_Y := 64.0
+const BAR_GAP := 12.0
+const BAR_FRAME_W := 230.0
 const ROW_COLORS := [Color("#d42434"), Color("#f2eef7"), Color("#9a6cf0"), Color("#f0b429")]
 const RED := Color("#d42434")
 const TEAL := Color("#4fead1")
@@ -357,17 +360,17 @@ func _build_highway() -> void:
 			_root.add_child(div)
 
 	# winged skull crest straddling the highway's top edge, sitting just above
-	# the border and small enough to clear the turn pips
+	# the border and small enough to clear the turn pips and the health bars
 	var crest := _art("duel_crest.png")
 	if crest != null:
-		var cw := 230.0
+		var cw := 170.0
 		var ch := cw * crest.get_height() / crest.get_width()
 		var c := TextureRect.new()
 		c.texture = crest
 		c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		c.stretch_mode = TextureRect.STRETCH_SCALE
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		c.position = Vector2(576.0 - cw * 0.5, (TRACK_TOP - 10.0) - 5.0 - ch * 0.5)
+		c.position = Vector2(576.0 - cw * 0.5, TRACK_TOP - ch * 0.5 + 6.0)
 		c.size = Vector2(cw, ch)
 		_root.add_child(c)
 
@@ -385,11 +388,12 @@ func _build_highway() -> void:
 	_hit_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_hit_line)
 
-	# turn pips: four sparkles from the uploaded strip
+	# turn pips: four sparkles from the uploaded strip, tucked into the top edge
+	# so the centred health bars have room below them.
 	_make_pips()
-	var dot_w := 28.0
-	var dot_h := 44.0
-	var dot_gap := 24.0
+	var dot_w := 22.0
+	var dot_h := 30.0
+	var dot_gap := 16.0
 	var total := float(BEAT_DOTS) * dot_w + float(BEAT_DOTS - 1) * dot_gap
 	for i in _pip_tex.size():
 		var d := TextureRect.new()
@@ -398,7 +402,7 @@ func _build_highway() -> void:
 		d.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		d.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		d.position = Vector2(576.0 - total * 0.5 + float(i) * (dot_w + dot_gap), 14.0)
+		d.position = Vector2(576.0 - total * 0.5 + float(i) * (dot_w + dot_gap), 8.0)
 		d.size = Vector2(dot_w, dot_h)
 		d.pivot_offset = d.size * 0.5
 		d.modulate = Color(1, 1, 1, 0.85)
@@ -454,21 +458,21 @@ func _build_hud() -> void:
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
-	var you := _label("YOU", 16, Color("#f2eef7"))
-	you.offset_left = BAR_X
-	you.offset_right = BAR_X + BAR_W
-	you.offset_top = 42
-	you.offset_bottom = 66
+	var you := _label("YOU", 13, Color("#f2eef7"))
+	you.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	you.offset_left = 576.0 - BAR_W - BAR_GAP * 0.5
+	you.offset_right = you.offset_left + BAR_W
+	# Clear of the skull frame, which reaches up over the player's bar.
+	you.offset_top = 14
+	you.offset_bottom = 34
 	_root.add_child(you)
 
-	_enemy_name = _label("ENEMY", 16, RED)
-	_enemy_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_enemy_name.anchor_left = 1.0
-	_enemy_name.anchor_right = 1.0
-	_enemy_name.offset_left = -BAR_X - BAR_W
-	_enemy_name.offset_right = -BAR_X
-	_enemy_name.offset_top = 42
-	_enemy_name.offset_bottom = 66
+	_enemy_name = _label("ENEMY", 13, RED)
+	_enemy_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_enemy_name.offset_left = 576.0 + BAR_GAP * 0.5
+	_enemy_name.offset_right = _enemy_name.offset_left + BAR_W
+	_enemy_name.offset_top = 40
+	_enemy_name.offset_bottom = 60
 	_root.add_child(_enemy_name)
 
 	_combo_label = _label("", 24, TEAL)
@@ -653,14 +657,12 @@ func _build_enemy_bar() -> void:
 
 func _duel_bar(right_aligned: bool, with_frame: bool) -> TextureRect:
 	var bar := Control.new()
+	# Both bars sit in one centred pair above the rail.
+	var left := 576.0 - BAR_W - BAR_GAP * 0.5
 	if right_aligned:
-		bar.anchor_left = 1.0
-		bar.anchor_right = 1.0
-		bar.offset_left = -BAR_X - BAR_W
-		bar.offset_right = -BAR_X
-	else:
-		bar.offset_left = BAR_X
-		bar.offset_right = BAR_X + BAR_W
+		left = 576.0 + BAR_GAP * 0.5
+	bar.offset_left = left
+	bar.offset_right = left + BAR_W
 	bar.offset_top = BAR_Y
 	bar.offset_bottom = BAR_Y + BAR_H
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -865,14 +867,17 @@ func _set_pattern(arr: Array) -> void:
 				float(n["beat"]) + float(n.get("hold", 0.0)))
 
 
-## How long a phrase may run, in beats. Harder duelists get longer sections: two
-## extra beats in tier 3, and the boss of a room gets one more again.
+## How long a phrase may run, in beats. Always a whole number of bars, so the
+## section ends on a bar line and the next one starts on one too: the music and
+## the rail share the same grid. Harder duelists take more bars, and the boss
+## of a room takes one more again.
 func _phrase_len(r: int) -> int:
 	var style := _style()
 	var extra := int(style.get("tier", 1)) - 1
 	if _enemy != null and is_instance_valid(_enemy) and bool(_enemy.get("boss")):
 		extra += 1
-	return clampi(4 + r + int(style.get("bonus", 0)) + extra, 3, 12)
+	var bars := clampi(1 + (r + int(style.get("bonus", 0)) + extra) / 4, 1, 3)
+	return bars * 4
 
 
 ## The enemy's phrase. Gaps are deliberate: a beat with no note is what the ear
@@ -1150,7 +1155,7 @@ func _enter_phase(p: int) -> void:
 	if p == P.PLAYER:
 		# The splash gets a fixed two seconds, so give the player phase a
 		# count-in long enough that the first note still lands after it.
-		_lead = maxf(LEAD, ceilf(TURN_BANNER_SEC / _beat_sec + 0.4))
+		_lead = LEAD
 		_show_turn_banner()
 	else:
 		_lead = LEAD
@@ -1174,7 +1179,9 @@ func _show_turn_banner() -> void:
 		_turn_rule_mat.set_shader_parameter("progress", 0.0)
 	# Fade in, wipe the rule out from its centre diamond, hold for the splash's
 	# full duration, then clear before the first note reaches the judge line.
-	var hold := maxf(0.1, TURN_BANNER_SEC - TURN_FADE_IN - TURN_FADE_OUT)
+	# The splash never runs past the count-in, or it would cover the first note.
+	var sec := minf(TURN_BANNER_SEC, _lead * _beat_sec - 0.25)
+	var hold := maxf(0.1, sec - TURN_FADE_IN - TURN_FADE_OUT)
 	_turn_tween = create_tween()
 	_turn_tween.tween_property(_turn_layer, "modulate:a", 1.0, TURN_FADE_IN)
 	_turn_tween.parallel().tween_property(_turn_dim, "color:a", 0.55, TURN_FADE_IN)
@@ -1209,7 +1216,9 @@ func _note_time(i: int) -> float:
 
 
 func _phase_end() -> float:
-	return (float(_pattern_last_beat) + _lead) * _beat_sec + 0.35
+	# The phrase always runs to the next bar line, so the music keeps its grid.
+	var bars := ceilf(maxf(_pattern_last_beat, 1.0) / 4.0)
+	return (bars * 4.0 + _lead) * _beat_sec
 
 
 func _process(delta: float) -> void:
@@ -1264,7 +1273,8 @@ func _process(delta: float) -> void:
 			if _phase_time > _phase_end():
 				_finish_player()
 		P.RESULT:
-			if _phase_time > 1.5:
+			# One whole bar of pause, so the next phrase still starts on a bar line.
+			if _phase_time > _beat_sec * 4.0:
 				if is_instance_valid(_enemy) and int(_enemy.get("health")) > 0:
 					_begin_round()
 				else:
