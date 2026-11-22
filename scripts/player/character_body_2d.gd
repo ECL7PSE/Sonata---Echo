@@ -122,27 +122,43 @@ func _stop_invincibility_flash() -> void:
 	icon.modulate = Color(1, 1, 1, 1)
 
 
-## Death: a short fade, then back to PlayerStart with full health.
-##
-## Coins are NOT reset. GameState is an autoload precisely so the purse survives
-## the respawn, and losing it here would be the single most annoying thing the
-## feature could do.
+## Death: a short fade, then the world reacts. The save manager drops the purse
+## into a shade where you fell and rebuilds the floor; the duel reads the same
+## signal and ends in defeat. Only if nobody rebuilds the world do we fall back
+## to PlayerStart with full health.
 func _die() -> void:
 	_dying = true
 	is_attacking = false
 	attack_shape.disabled = true
 	slash_effect.visible = false
 	set_physics_process(false)
+
+	# Death fade must play even when the scene tree is paused (duel overlay pauses tree).
+	# Set process_mode to ALWAYS so the tween advances during pause.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	icon.modulate.a = 0.0
 	var tween := create_tween()
 	tween.tween_property(icon, "modulate:a", 0.0, 0.35)
 	await tween.finished
+
+	# Emit the died signal so SaveManager.on_death() and Battle._on_player_died() fire.
+	# Must be after the fade (the fade is the death presentation).
+	died.emit()
+
 	if not is_inside_tree():
+		process_mode = Node.PROCESS_MODE_INHERIT
 		return
-	snap_to_player_start()
-	icon.modulate.a = 1.0
-	reset_health()
+
+	# Fallback respawn: only if still in tree AND still at 0 health.
+	# The save manager's rebuild is deferred, so it may not have happened yet.
+	if health <= 0:
+		snap_to_player_start()
+		icon.modulate.a = 1.0
+		reset_health()
+
 	set_physics_process(true)
+	process_mode = Node.PROCESS_MODE_INHERIT
 const SLASH_ROWS := 3   
 
 

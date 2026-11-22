@@ -46,7 +46,7 @@ const PERFECT := 0.10
 # The pair sits centred above the rail, so both duelsists are read in one place.
 const BAR_W := 210.0
 const BAR_H := 18.0
-const BAR_Y := 296.0
+const BAR_Y := 236.0
 const BAR_GAP := 12.0
 const BAR_FRAME_W := 230.0
 ## Where the duelists stand, and how big they are drawn.
@@ -457,9 +457,12 @@ func _build_highway() -> void:
 func _build_hud() -> void:
 	_feedback = _label("", 32, TEAL)
 	_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_feedback.anchor_right = 1.0
-	_feedback.offset_top = 404
-	_feedback.offset_bottom = 456
+	_feedback.anchor_left = 0.5
+	_feedback.anchor_right = 0.5
+	_feedback.offset_left = -260.0
+	_feedback.offset_right = 260.0
+	_feedback.offset_top = 452
+	_feedback.offset_bottom = 504
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
@@ -468,16 +471,16 @@ func _build_hud() -> void:
 	you.offset_left = PORTRAIT_X_PLAYER - BAR_W * 0.5
 	you.offset_right = you.offset_left + BAR_W
 	# Clear of the skull frame, which reaches up over the player's bar.
-	you.offset_top = 222
-	you.offset_bottom = 246
+	you.offset_top = 200
+	you.offset_bottom = 224
 	_root.add_child(you)
 
 	_enemy_name = _label("ENEMY", 18, RED)
 	_enemy_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_enemy_name.offset_left = PORTRAIT_X_ENEMY - BAR_W * 0.5
 	_enemy_name.offset_right = _enemy_name.offset_left + BAR_W
-	_enemy_name.offset_top = 222
-	_enemy_name.offset_bottom = 246
+	_enemy_name.offset_top = 200
+	_enemy_name.offset_bottom = 224
 	_root.add_child(_enemy_name)
 
 	_combo_label = _label("", 24, TEAL)
@@ -516,20 +519,20 @@ func _build_turn_overlay() -> void:
 		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		t.stretch_mode = TextureRect.STRETCH_SCALE
 		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		t.position = Vector2(576.0 - w * 0.5, 246.0)
+		t.position = Vector2(576.0 - w * 0.5, 270.0)
 		t.size = Vector2(w, h)
 		_turn_layer.add_child(t)
 
 	var rule := _art("turn_rule.png")
 	if rule != null:
-		var w := 620.0
+		var w := 600.0
 		var h := w * rule.get_height() / rule.get_width()
 		var r := TextureRect.new()
 		r.texture = rule
 		r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		r.stretch_mode = TextureRect.STRETCH_SCALE
 		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		r.position = Vector2(576.0 - w * 0.5, 326.0)
+		r.position = Vector2(576.0 - w * 0.5, 368.0)
 		r.size = Vector2(w, h)
 		_turn_rule_mat = ShaderMaterial.new()
 		_turn_rule_mat.shader = CENTER_WIPE
@@ -547,7 +550,13 @@ func _clear_duelists() -> void:
 	_enemy_portrait = null
 
 
+# One shared duelist box, derived from the player's visible body so the enemy
+# can never read bigger than the player. Set once by _build_duelists.
+var _duel_box_w := 0.0
+
 func _build_duelists() -> void:
+	# Derive the shared duelist box fresh from the current player's visible body.
+	_duel_box_w = 0.0
 	# Both duelists face the camera: the rail is the fight, not a side view.
 	_player_portrait = _portrait_from(_player, false, PORTRAIT_X_PLAYER)
 	_enemy_portrait = _portrait_from(_enemy, true, PORTRAIT_X_ENEMY)
@@ -591,7 +600,7 @@ func _portrait_from(actor: Node, leans_left: bool, x: float) -> Node2D:
 			var tex: Texture2D = es.sprite_frames.get_frame_texture(anim, es.frame)
 			if tex != null:
 				_fit_portrait(c2, _frame_image(tex),
-					float(tex.get_width()), float(tex.get_height()))
+					float(tex.get_width()), float(tex.get_height()), true)
 			s = c2
 	if s == null:
 		return null
@@ -605,18 +614,29 @@ func _portrait_from(actor: Node, leans_left: bool, x: float) -> Node2D:
 	return s
 
 
-## Scales a portrait so its VISIBLE body fills PORTRAIT_H and centres that
-## body on the portrait spot. Monster art sits in padded frames, so scaling by
-## the frame would leave a small mushroom looking tiny and hanging low.
-func _fit_portrait(node: CanvasItem, img: Image, fw: float, fh: float) -> void:
+## Scales a portrait so its VISIBLE body fits the shared duelist box and is
+## centred on PORTRAIT_Y. The player sets the box from its own visible body;
+## the enemy is scaled to fit inside it (visible width AND height both <= the
+## player's), so a wide monster can never read bigger than the player.
+func _fit_portrait(node: CanvasItem, img: Image, fw: float, fh: float, is_enemy: bool = false) -> void:
 	var centre := Vector2.ZERO
 	var body_h := fh
+	var body_w := fw
 	if img != null:
 		var used := img.get_used_rect()
 		if used.size.x > 0 and used.size.y > 0:
 			centre = Vector2(used.get_center()) - Vector2(fw, fh) * 0.5
 			body_h = float(used.size.y)
-	node.scale = Vector2.ONE * clampf(PORTRAIT_H / body_h, 0.5, 12.0)
+			body_w = float(used.size.x)
+	var scale: float
+	if is_enemy and _duel_box_w > 0:
+		# Fit the enemy inside the player's box: cap both dimensions.
+		scale = clampf(minf(PORTRAIT_H / body_h, _duel_box_w / body_w), 0.5, 12.0)
+	else:
+		# Player: sets the shared box, keeps the existing look exactly.
+		scale = clampf(PORTRAIT_H / body_h, 0.5, 12.0)
+		_duel_box_w = PORTRAIT_H * body_w / body_h
+	node.scale = Vector2.ONE * scale
 	node.set("offset", -centre)
 
 
@@ -1433,9 +1453,10 @@ func _try_hit(lane: int, key: int = 0) -> void:
 		return
 
 	_judged[best] = true
-	# Any new press ends the previous long note: counting a dropped hold as a
-	# miss here is what stops it riding the judge line after the player moved on.
-	if _hold_note >= 0:
+	# A press in ANOTHER lane must not cut the bar: holding one key while
+	# tapping another is how a long note and a normal note land together. Only
+	# a new press in the hold's OWN lane ends it (and banks the one miss).
+	if _hold_note >= 0 and int(_pattern[_hold_note]["type"]) == lane:
 		_break_hold()
 	_phase_hits += 1
 	# Every lane is a normal note now: press its key on the beat, it lands. The

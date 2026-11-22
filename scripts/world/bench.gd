@@ -124,22 +124,18 @@ func _build_menu() -> void:
 	panel.add_child(rule)
 
 	var rest := GothUI.make_button("REST", Vector2(280, 44), 16)
-	rest.position = Vector2(160, 100)
+	rest.position = Vector2(160, 116)
 	rest.pressed.connect(_on_rest)
 	panel.add_child(rest)
 
-	var map := GothUI.make_button("MAP", Vector2(280, 44), 16)
-	map.position = Vector2(160, 156)
-	map.pressed.connect(_on_map)
-	panel.add_child(map)
-
+	# No MAP button: the floor map lives behind TAB, not in the bench panel.
 	var shop := GothUI.make_button("SHOP", Vector2(280, 44), 16)
-	shop.position = Vector2(160, 212)
+	shop.position = Vector2(160, 184)
 	shop.pressed.connect(_on_shop)
 	panel.add_child(shop)
 
 	var leave := GothUI.make_button("LEAVE", Vector2(280, 44), 16)
-	leave.position = Vector2(160, 268)
+	leave.position = Vector2(160, 252)
 	leave.pressed.connect(_close)
 	panel.add_child(leave)
 
@@ -199,18 +195,6 @@ func _on_rest() -> void:
 		return
 	_player.call("reset_health")
 	SaveManager.save_run(_player)
-
-
-func _on_map() -> void:
-	_menu.visible = false
-	var m := SaveManager.toggle_map()
-	if m != null and not m.closed.is_connected(_on_map_closed):
-		m.closed.connect(_on_map_closed)
-
-
-func _on_map_closed() -> void:
-	if is_inside_tree() and get_tree().paused:
-		_menu.visible = true
 
 
 func _on_shop() -> void:
