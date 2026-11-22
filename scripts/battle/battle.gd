@@ -578,6 +578,11 @@ func _portrait_from(actor: Node, face_left: bool, x: float) -> Node2D:
 	if s == null:
 		return null
 	s.position = Vector2(x, 430.0)
+	# Remember the resting shape so animations can always return to it.
+	s.set_meta("home_scale", s.scale)
+	s.set_meta("face_left", face_left)
+	s.set_meta("tint", Color.WHITE)
+	s.set_meta("slump", 0.0)
 	_root.add_child(s)
 	return s
 
@@ -597,6 +602,50 @@ func _lunge(which: Node2D, dirn: float) -> void:
 	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(which, "position:x", x + dirn * 18.0, 0.07)
 	tw.tween_property(which, "position:x", x, 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+## The duelist whose section just ended throws their weight forward, flashes and
+## settles: the hand-off between turns reads as a move instead of a cut.
+func _turn_pose(which: Node2D) -> void:
+	if which == null or not is_instance_valid(which):
+		return
+	var home: Vector2 = which.get_meta("home_scale", which.scale)
+	var lean := _slump(which)
+	var tint: Color = which.get_meta("tint", Color.WHITE)
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(which, "scale", home * Vector2(1.10, 0.93), 0.10)
+	tw.parallel().tween_property(which, "rotation", lean * 2.4, 0.10)
+	tw.parallel().tween_property(which, "modulate", Color(1.45, 1.45, 1.45), 0.10)
+	tw.chain().tween_property(which, "scale", home, 0.26) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(which, "rotation", lean, 0.26)
+	tw.parallel().tween_property(which, "modulate", tint, 0.26)
+
+
+## Forward lean, in radians, that a battered duelist holds.
+func _slump(which: Node2D) -> float:
+	var dirn := -1.0 if bool(which.get_meta("face_left", false)) else 1.0
+	return dirn * float(which.get_meta("slump", 0.0))
+
+
+## Below a third health a duelist looks bruised, and the slump deepens as they
+## near the floor. Called whenever a health bar is refreshed.
+func _apply_battered(which: Node2D, frac: float) -> void:
+	if which == null or not is_instance_valid(which):
+		return
+	var tint := Color.WHITE
+	var slump := 0.0
+	if frac <= 0.34:
+		tint = Color(1.0, 0.78, 0.74)
+		slump = 0.05
+	if frac <= 0.15:
+		tint = Color(1.0, 0.60, 0.56)
+		slump = 0.09
+	which.set_meta("tint", tint)
+	which.set_meta("slump", slump)
+	which.modulate = tint
+	which.rotation = _slump(which)
 
 
 func _build_enemy_bar() -> void:
@@ -731,6 +780,7 @@ func _refresh_player_bar(_cur: int = 0, _mx: int = 0) -> void:
 		return
 	_p_target = clampf(float(int(_player.get("health")))
 			/ float(maxi(int(_player.get("max_health")), 1)), 0.0, 1.0)
+	_apply_battered(_player_portrait, _p_target)
 
 
 func _refresh_enemy_bar() -> void:
@@ -738,6 +788,7 @@ func _refresh_enemy_bar() -> void:
 		return
 	_e_target = clampf(float(int(_enemy.get("health")))
 			/ float(maxi(int(_enemy.get("max_health")), 1)), 0.0, 1.0)
+	_apply_battered(_enemy_portrait, _e_target)
 
 
 func _apply_fills(fill: TextureRect, frac: float) -> void:
@@ -764,23 +815,26 @@ func _begin_round() -> void:
 ## note, and `answer` is how the enemy's phrase comes back at the player - the
 ## reply is a variation, never a copy.
 ##
+## `tier` is how hard the duelist fights: a higher tier adds notes to every
+## phrase (so the section runs longer) and lands double notes a round earlier.
+##
 ## `bpm` must match tools/gen_battle_music.py: the notes fall on that grid.
 const SPECIES_STYLE := {
-	"rat": {"bpm": 152, "bonus": 1, "density": 0.95, "offbeat": 0.30,
+	"rat": {"bpm": 152, "bonus": 1, "tier": 1, "density": 0.95, "offbeat": 0.30,
 		"holds": 0, "rest_bias": 0.00, "answer": "mirror"},
-	"slime": {"bpm": 84, "bonus": 0, "density": 0.70, "offbeat": 0.05,
+	"slime": {"bpm": 84, "bonus": 0, "tier": 2, "density": 0.70, "offbeat": 0.05,
 		"holds": 3, "rest_bias": 0.12, "answer": "heavy"},
-	"bat": {"bpm": 138, "bonus": 0, "density": 0.86, "offbeat": 0.55,
+	"bat": {"bpm": 138, "bonus": 0, "tier": 2, "density": 0.86, "offbeat": 0.55,
 		"holds": 4, "rest_bias": 0.04, "answer": "echo"},
-	"mushroom": {"bpm": 92, "bonus": -1, "density": 0.62, "offbeat": 0.10,
+	"mushroom": {"bpm": 92, "bonus": -1, "tier": 1, "density": 0.62, "offbeat": 0.10,
 		"holds": 2, "rest_bias": 0.16, "answer": "sparse"},
-	"flying_eye": {"bpm": 126, "bonus": 0, "density": 0.80, "offbeat": 0.25,
+	"flying_eye": {"bpm": 126, "bonus": 0, "tier": 2, "density": 0.80, "offbeat": 0.25,
 		"holds": 4, "rest_bias": 0.14, "answer": "retro"},
-	"goblin": {"bpm": 146, "bonus": 1, "density": 0.92, "offbeat": 0.15,
+	"goblin": {"bpm": 146, "bonus": 1, "tier": 2, "density": 0.92, "offbeat": 0.15,
 		"holds": 0, "rest_bias": 0.00, "answer": "shift"},
-	"mimic": {"bpm": 108, "bonus": 0, "density": 0.78, "offbeat": 0.40,
+	"mimic": {"bpm": 108, "bonus": 0, "tier": 3, "density": 0.78, "offbeat": 0.40,
 		"holds": 3, "rest_bias": 0.06, "answer": "bait"},
-	"skeleton": {"bpm": 132, "bonus": 0, "density": 0.88, "offbeat": 0.20,
+	"skeleton": {"bpm": 132, "bonus": 0, "tier": 3, "density": 0.88, "offbeat": 0.20,
 		"holds": 2, "rest_bias": 0.03, "answer": "chord"},
 }
 
@@ -809,11 +863,21 @@ func _set_pattern(arr: Array) -> void:
 		_pattern_last_beat = maxf(_pattern_last_beat, float(n["beat"]))
 
 
+## How long a phrase may run, in beats. Harder duelists get longer sections: two
+## extra beats in tier 3, and the boss of a room gets one more again.
+func _phrase_len(r: int) -> int:
+	var style := _style()
+	var extra := int(style.get("tier", 1)) - 1
+	if _enemy != null and is_instance_valid(_enemy) and bool(_enemy.get("boss")):
+		extra += 1
+	return clampi(4 + r + int(style.get("bonus", 0)) + extra, 3, 12)
+
+
 ## The enemy's phrase. Gaps are deliberate: a beat with no note is what the ear
 ## remembers, and it keeps the phrase from reading as a metronome.
 func _make_pattern(r: int) -> Array:
 	var style := _style()
-	var n := clampi(4 + r + int(style.get("bonus", 0)), 3, 10)
+	var n := _phrase_len(r)
 	var density: float = float(style.get("density", 0.88))
 	var offbeat: float = float(style.get("offbeat", 0.12))
 	var rest_bias: float = float(style.get("rest_bias", 0.0))
@@ -918,17 +982,20 @@ func _make_reply(demo: Array, r: int) -> Array:
 			if not out.is_empty():
 				out.append(_note(float(out[out.size() - 1]["beat"]) + 1.0, ATTACK))
 	# Later rounds are the challenge: a second lane struck on the same beat, so
-	# the player has to press two keys in one breath.
-	if r >= 3:
+	# the player has to press two keys in one breath. Harder duelists start it a
+	# round earlier, and their doubles land more often.
+	var double_from := 4 - maxi(1, int(_style().get("tier", 1)))
+	var double_odds := 0.28 + 0.08 * float(_style().get("tier", 1))
+	if r >= double_from:
 		var extra: Array = []
 		for n in out:
-			if randf() < 0.34:
+			if randf() < double_odds:
 				var t := (int(n["type"]) + 1) % 3
 				if not _has_note(out, float(n["beat"]), t):
 					extra.append(_note(float(n["beat"]), t))
 		out.append_array(extra)
 		# A round that promises doubles must actually contain one.
-		if not _has_double(out) and out.size() > 1:
+		if not _has_double(out) and not out.is_empty():
 			var i := out.size() / 2
 			var base: Dictionary = out[i]
 			for step in [1, 2]:
@@ -1147,6 +1214,7 @@ func _process(delta: float) -> void:
 					_burst(i, Color(1.6, 1.6, 1.6))
 					_lunge(_enemy_portrait, -1.0)
 			if _phase_time > _phase_end():
+				_turn_pose(_enemy_portrait)
 				_enter_phase(P.PLAYER)
 		P.PLAYER:
 			if _phase_time > _phase_end():
@@ -1408,6 +1476,7 @@ func _finish_player() -> void:
 
 	_phase = P.RESULT
 	_phase_time = 0.0
+	_turn_pose(_player_portrait)
 	_hide_turn_banner()
 	var finishing := false
 	if _dmg_dealt > 0 and is_instance_valid(_enemy):

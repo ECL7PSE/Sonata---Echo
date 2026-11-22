@@ -1,15 +1,18 @@
-"""Generate the eight duel tracks: gothic organs, bells and low drones.
+"""Generate the eight duel tracks.
 
 Run with plain Python 3 (stdlib only):
 
     python tools/gen_battle_music.py
 
-Each species gets its own key, mode and tempo, so two duels never sound alike.
-The tempo here MUST match SPECIES_STYLE[key]["bpm"] in
-scripts/battle/battle.gd - the notes fall on this grid.
+Each species gets its own key, mode, tempo and character. The tempo here MUST
+match SPECIES_STYLE[key]["bpm"] in scripts/battle/battle.gd - the notes fall on
+this grid.
 
-The loops are seamless: every voice is summed modulo the buffer length, so
-decays that run past the end wrap into the start instead of clicking.
+Arrangement rules, so the tracks stay listenable rather than a pile of voices:
+every chord is a diatonic triad of the mode, every melody note is a chord tone
+of the bar it lands in, the pad is soft-edged, and only one strike sounds at a
+time. The loops are seamless: voices are summed modulo the buffer, so decays
+that run past the end wrap into the start instead of clicking.
 """
 
 import math
@@ -30,24 +33,33 @@ MODES = {
     "dorian": [0, 2, 3, 5, 7, 9, 10],
 }
 
-# degrees (0-based into the mode) for one chord per bar
+# scale degrees, one chord per bar
 PROGRESSIONS = [
-    [0, 5, 3, 4],  # i - VI - III - iv
-    [0, 3, 5, 4],
-    [0, 6, 3, 4],
-    [0, 2, 5, 4],
+    [0, 5, 3, 4],  # i - VI - iv - v
+    [0, 3, 4, 0],  # i - iv - v - i
+    [0, 5, 2, 4],  # i - VI - III - v
+    [0, 2, 5, 4],  # i - III - VI - v
 ]
 
-TRACKS = {
-    #            root  mode        bpm   bell  organ  pluck  choir  thump  step
-    "rat":        (220.0, "minor",   152,  0.20, 0.26, 0.55, 0.10, 0.30, 0.10),
-    "slime":      (147.0, "phrygian", 84,  0.42, 0.30, 0.18, 0.22, 0.55, 0.00),
-    "bat":        (330.0, "harmonic",138,  0.30, 0.16, 0.42, 0.18, 0.18, 0.16),
-    "mushroom":   (196.0, "dorian",   92,  0.50, 0.34, 0.14, 0.26, 0.40, 0.00),
-    "flying_eye": (233.0, "minor",   126,  0.34, 0.30, 0.34, 0.30, 0.22, 0.08),
-    "goblin":     (131.0, "minor",   146,  0.16, 0.24, 0.50, 0.12, 0.42, 0.12),
-    "mimic":      (185.0, "harmonic",108,  0.44, 0.28, 0.30, 0.20, 0.30, 0.06),
-    "skeleton":   (147.0, "minor",   132,  0.46, 0.44, 0.22, 0.16, 0.36, 0.08),
+# Character per species: how loud each voice sits, and how busy the melody is.
+# `step` is the melody grid in beats, `density` the chance a slot is played.
+PROFILES = {
+    "rat": dict(root=220.0, mode="minor", bpm=152, step=0.5, density=0.55,
+                octave=12, pad=0.12, mel=0.20, bell=0.07, thump=0.20),
+    "slime": dict(root=147.0, mode="phrygian", bpm=84, step=1.0, density=0.45,
+                  octave=0, pad=0.18, mel=0.14, bell=0.16, thump=0.30),
+    "bat": dict(root=330.0, mode="harmonic", bpm=138, step=0.5, density=0.50,
+                octave=12, pad=0.10, mel=0.16, bell=0.09, thump=0.14),
+    "mushroom": dict(root=196.0, mode="dorian", bpm=92, step=1.0, density=0.40,
+                     octave=0, pad=0.18, mel=0.12, bell=0.20, thump=0.22),
+    "flying_eye": dict(root=233.0, mode="minor", bpm=126, step=0.5, density=0.40,
+                       octave=12, pad=0.15, mel=0.14, bell=0.12, thump=0.16),
+    "goblin": dict(root=131.0, mode="minor", bpm=146, step=0.5, density=0.60,
+                   octave=12, pad=0.10, mel=0.18, bell=0.06, thump=0.26),
+    "mimic": dict(root=185.0, mode="harmonic", bpm=108, step=1.0, density=0.45,
+                  octave=12, pad=0.15, mel=0.16, bell=0.16, thump=0.20),
+    "skeleton": dict(root=147.0, mode="minor", bpm=132, step=2.0, density=0.30,
+                     octave=0, pad=0.24, mel=0.10, bell=0.22, thump=0.24),
 }
 
 
@@ -62,146 +74,119 @@ def place(buf, start, samples, gain=1.0):
         buf[(start + i) % n] += v * gain
 
 
-def env_hit(length, attack=0.005, decay=6.0):
-    out = []
-    for i in range(length):
-        t = i / SR
-        a = min(1.0, t / attack) if attack > 0 else 1.0
-        out.append(a * math.exp(-decay * t))
-    return out
+def triad(mode, degree):
+    """Diatonic triad on a scale degree, as semitone offsets from the root."""
+    def at(d):
+        return mode[d % 7] + 12 * (d // 7)
+    return [at(degree), at(degree + 2), at(degree + 4)]
 
 
-def organ(buf, start, dur, freq, gain, vibrato=0.004):
-    """Pipe-organ pad: odd harmonics, slow vibrato, soft edges."""
-    n = int(dur * SR)
+def pad(buf, start, dur, freq, gain):
+    """Soft organ pipe: sine plus a whisper of second harmonic, gentle edges."""
+    n = max(1, int(dur * SR))
+    attack = max(1, int(0.18 * SR))
+    release = max(1, int(0.22 * SR))
+    w = 2.0 * math.pi * freq
     out = []
     for i in range(n):
         t = i / SR
-        w = 2.0 * math.pi * freq * t * (1.0 + vibrato * math.sin(2.0 * math.pi * 4.6 * t))
-        s = (math.sin(w) + 0.42 * math.sin(2.0 * w) + 0.22 * math.sin(3.0 * w)
-             + 0.10 * math.sin(4.0 * w))
-        edge = min(1.0, i / (0.12 * SR), (n - i) / (0.2 * SR))
+        vibrato = 1.0 + 0.002 * math.sin(2.0 * math.pi * 4.2 * t)
+        s = math.sin(w * t * vibrato) + 0.18 * math.sin(2.0 * w * t * vibrato)
+        edge = min(1.0, i / attack, (n - i) / release)
         out.append(s * max(0.0, edge))
     place(buf, start, out, gain)
 
 
+def pluck(buf, start, dur, freq, gain):
+    """Harp-ish note: soft triangle with a fast decay."""
+    n = max(1, int(dur * SR))
+    w = 2.0 * math.pi * freq
+    out = []
+    for i in range(n):
+        t = i / SR
+        s = math.sin(w * t) + 0.22 * math.sin(2.0 * w * t) + 0.06 * math.sin(3.0 * w * t)
+        out.append(s * math.exp(-2.6 * t) * min(1.0, t / 0.006))
+    place(buf, start, out, gain)
+
+
 def bell(buf, start, dur, freq, gain):
-    """Toll: inharmonic partials, long tail - the signature gothic sound."""
-    n = int(dur * SR)
-    parts = [(1.0, 1.0, 1.6), (2.76, 0.55, 2.2), (5.40, 0.28, 3.4), (8.93, 0.14, 5.0)]
+    """Church bell: harmonic partials only, so it rings instead of screeching."""
+    n = max(1, int(dur * SR))
+    w = 2.0 * math.pi * freq
     out = []
     for i in range(n):
         t = i / SR
-        s = 0.0
-        for ratio, amp, decay in parts:
-            s += amp * math.exp(-decay * t) * math.sin(2.0 * math.pi * freq * ratio * t)
-        out.append(s * min(1.0, t / 0.002))
-    place(buf, start, out, gain)
-
-
-def pluck(buf, start, dur, freq, gain, bright=0.45):
-    """Harpsichord-ish string: saw edge, fast decay."""
-    n = int(dur * SR)
-    out = []
-    for i in range(n):
-        t = i / SR
-        s = math.sin(2.0 * math.pi * freq * t)
-        s += bright * math.sin(2.0 * math.pi * freq * 2.0 * t)
-        s += bright * 0.5 * math.sin(2.0 * math.pi * freq * 3.0 * t)
-        out.append(s * math.exp(-5.0 * t) * min(1.0, t / 0.003))
-    place(buf, start, out, gain)
-
-
-def choir(buf, start, dur, freq, gain):
-    """Wordless choir: beating detuned sines with a slow swell."""
-    n = int(dur * SR)
-    out = []
-    for i in range(n):
-        t = i / SR
-        swell = math.sin(math.pi * min(1.0, i / max(1, n))) ** 0.6
-        s = 0.0
-        for det in (1.0, 1.005, 0.994):
-            s += math.sin(2.0 * math.pi * freq * det * t + 0.4 * math.sin(2.0 * math.pi * 5.2 * t))
-        out.append(s / 3.0 * swell)
+        s = (math.exp(-1.1 * t) * math.sin(w * t)
+             + 0.42 * math.exp(-1.8 * t) * math.sin(2.0 * w * t)
+             + 0.18 * math.exp(-2.6 * t) * math.sin(3.0 * w * t))
+        out.append(s * min(1.0, t / 0.004))
     place(buf, start, out, gain)
 
 
 def thump(buf, start, freq, gain):
-    n = int(0.22 * SR)
+    n = max(1, int(0.18 * SR))
     out = []
     for i in range(n):
         t = i / SR
-        f = freq * (1.0 - 0.35 * t / 0.22)
-        out.append(math.sin(2.0 * math.pi * f * t) * math.exp(-16.0 * t))
+        f = freq * (1.0 - 0.25 * t / 0.18)
+        out.append(math.sin(2.0 * math.pi * f * t) * math.exp(-14.0 * t))
     place(buf, start, out, gain)
 
 
 def build(key, seed):
-    root, mode_name, bpm, bell_g, organ_g, pluck_g, choir_g, thump_g, step_g = TRACKS[key]
-    mode = MODES[mode_name]
+    p = PROFILES[key]
+    mode = MODES[p["mode"]]
     rnd = random.Random(seed)
-    beat = 60.0 / bpm
-    total = int(round(BARS * BEATS_PER_BAR * beat * SR))
+    beat = 60.0 / p["bpm"]
+    bar = BEATS_PER_BAR * beat
+    total = int(round(BARS * bar * SR))
     buf = [0.0] * total
     prog = rnd.choice(PROGRESSIONS)
-    bar_len = int(round(BEATS_PER_BAR * beat * SR))
+    chords = [triad(mode, prog[b % len(prog)]) for b in range(BARS)]
 
-    # Low drone: root and fifth, breathing slowly under everything.
-    for i in range(total):
-        t = i / SR
-        g = 0.20 + 0.05 * math.sin(2.0 * math.pi * 0.11 * t)
-        buf[i] += g * (math.sin(2.0 * math.pi * semis(root, -12) * t)
-                       + 0.5 * math.sin(2.0 * math.pi * semis(root, -5) * t))
-
-    # Organ chords: one per bar, the mode's third gives it the colour.
+    # One sustained chord per bar: root, third, fifth and an octave above.
     for b in range(BARS):
-        start = b * bar_len
-        degree = prog[b % len(prog)]
-        semis_root = mode[degree % len(mode)] + 12 * (degree // len(mode))
-        chord = [semis_root, semis_root + (7 if rnd.random() < 0.7 else 8),
-                 semis_root + 12]
-        for c in chord:
-            organ(buf, start, beat * BEATS_PER_BAR * 0.96, semis(root, c), organ_g * 0.55)
+        start = int(b * bar * SR)
+        for c in chords[b]:
+            pad(buf, start, bar * 0.98, semis(p["root"], c), p["pad"] * 0.4)
+        pad(buf, start, bar * 0.98, semis(p["root"], chords[b][0] - 12), p["pad"] * 0.7)
 
-    # Bells on the downbeat of the first and fifth bar - the funeral marker.
-    for b in (0, 4):
-        bell(buf, b * bar_len, 2.6, semis(root, 12), bell_g)
-    if rnd.random() < 0.6:
-        bell(buf, 6 * bar_len, 2.0, semis(root, 7), bell_g * 0.6)
+    # Melody: chord tones of the bar it lands in, one octave up so it sings.
+    slots = int(round(BARS * BEATS_PER_BAR / p["step"]))
+    last = -1
+    for s in range(slots):
+        if rnd.random() > p["density"]:
+            continue
+        t = s * p["step"] * beat
+        b = min(BARS - 1, int(t / bar))
+        tone = chords[b][rnd.randrange(3)]
+        if b == last and rnd.random() < 0.5:
+            continue  # leave a breath instead of repeating the same bar tone
+        last = b
+        freq = semis(p["root"], tone + p["octave"] + 12)
+        dur = p["step"] * beat * rnd.choice([0.9, 1.7])
+        pluck(buf, int(t * SR), dur, freq, p["mel"])
 
-    # Melody: a minor-key motif, per species. Some rest, some off-beat, so the
-    # ear gets a phrase rather than a metronome.
-    step = beat * (0.5 if rnd.random() < 0.5 else 1.0)
-    pos = 0.0
-    while pos < BARS * BEATS_PER_BAR - 0.5:
-        if rnd.random() < 0.62:
-            deg = rnd.choice([0, 0, 2, 3, 4, 5, 4, 2])
-            octave = 12 if rnd.random() < 0.35 else 0
-            f = semis(root, mode[deg % len(mode)] + 12 * (deg // len(mode)) + octave)
-            dur = step * rnd.choice([1.0, 1.0, 2.0])
-            pluck(buf, int(pos * beat * SR), dur, f, pluck_g)
-        pos += step
+    # Bell on the downbeat that opens each half, one quiet answer later.
+    bell(buf, 0, 2.4, semis(p["root"], chords[0][0] + 12), p["bell"])
+    bell(buf, int(4 * bar * SR), 2.4, semis(p["root"], chords[4][0] + 12), p["bell"])
+    if p["bell"] >= 0.12:
+        bell(buf, int(6 * bar * SR), 1.8, semis(p["root"], chords[6][2] + 12), p["bell"] * 0.6)
 
-    # Choir pad on the second half of every other bar.
-    for b in range(0, BARS, 2):
-        f = semis(root, mode[prog[(b + 1) % len(prog)] % len(mode)] + 12)
-        choir(buf, int((b + 2) * beat * SR), beat * 2.0, f, choir_g)
-
-    # Heartbeat: downbeats, with an off-beat step tick for the fast movers.
+    # Heartbeat: the bar's downbeat, and a softer one on beat three.
     for b in range(BARS):
-        thump(buf, b * bar_len, semis(root, -24), thump_g)
-        thump(buf, b * bar_len + int(beat * 2 * SR), semis(root, -24), thump_g * 0.6)
-        if step_g > 0.0 and rnd.random() < 0.7:
-            thump(buf, b * bar_len + int(beat * 0.5 * SR), semis(root, -12), step_g)
+        thump(buf, int(b * bar * SR), semis(p["root"], -24), p["thump"])
+        thump(buf, int((b * bar + 2.0 * beat) * SR), semis(p["root"], -24), p["thump"] * 0.5)
 
-    # Cheap wrap-around reverb, then a wide soft clip.
-    delay = int(0.093 * SR)
+    # Two soft echoes, then normalise. Linear gain only - no clipping, no drive.
     out = list(buf)
-    for i in range(total):
-        out[i] = buf[i] + 0.28 * out[(i - delay) % total]
+    for delay_s, gain in ((0.078, 0.16), (0.151, 0.08)):
+        delay = int(delay_s * SR)
+        for i in range(total):
+            out[i] += gain * out[(i - delay) % total]
     peak = max(1e-9, max(abs(v) for v in out))
-    scale = 0.74 / peak
-    return [math.tanh(v * scale * 1.3) / math.tanh(1.3) * 0.82 for v in out]
+    scale = 0.64 / peak
+    return [v * scale for v in out]
 
 
 def write(path, samples):
@@ -217,11 +202,13 @@ def main():
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = os.path.join(here, "audio", "battle")
     os.makedirs(out_dir, exist_ok=True)
-    for i, key in enumerate(sorted(TRACKS)):
+    for i, key in enumerate(sorted(PROFILES)):
         samples = build(key, 1000 + i)
         path = os.path.join(out_dir, key + ".wav")
         write(path, samples)
-        print("%-11s %5.1f s  %d KB" % (key, len(samples) / SR, os.path.getsize(path) // 1024))
+        rms = math.sqrt(sum(v * v for v in samples) / len(samples))
+        print("%-11s %5.1f s  rms %.3f  %d KB"
+              % (key, len(samples) / SR, rms, os.path.getsize(path) // 1024))
 
 
 if __name__ == "__main__":

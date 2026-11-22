@@ -16,6 +16,7 @@ var _checks := 0
 
 class MockEnemy extends Node:
 	var species := ""
+	var boss := false
 
 
 func _ok(cond: bool, msg: String) -> void:
@@ -44,6 +45,13 @@ func _initialize() -> void:
 		var style: Dictionary = _battle.SPECIES_STYLE[key]
 		bpms[int(style["bpm"])] = true
 		_ok(style.has("answer"), "%s has no answer style" % key)
+
+		# Difficulty: every species declares a tier, and it lengthens the section.
+		var tier := int(style.get("tier", 0))
+		_ok(tier >= 1 and tier <= 3, "%s has tier %d" % [key, tier])
+		var want := clampi(4 + 1 + int(style.get("bonus", 0)) + tier - 1, 3, 12)
+		var got := int(b.call("_phrase_len", 1))
+		_ok(got == want, "%s phrase is %d beats at round 1, expected %d" % [key, got, want])
 
 		# The enemy's phrase and the player's answer must not be the same section.
 		var demo: Array = b.call("_make_pattern", 2)
@@ -90,6 +98,7 @@ func _initialize() -> void:
 
 	# The answer ignores memory: swapping lanes is a real change of keys.
 	mock.species = "mimic"
+	mock.boss = false
 	var demo_m: Array = b.call("_make_pattern", 1)
 	var reply_m: Array = b.call("_make_reply", demo_m, 1)
 	var moved := false
@@ -97,6 +106,43 @@ func _initialize() -> void:
 		if int(demo_m[i]["type"]) != int(reply_m[i]["type"]):
 			moved = true
 	_ok(moved, "the mimic's answer kept every key the same")
+
+	# A boss extends the phrase on top of its species tier.
+	mock.species = "skeleton"
+	mock.boss = false
+	var plain: int = b.call("_phrase_len", 1)
+	mock.boss = true
+	_ok(int(b.call("_phrase_len", 1)) == plain + 1, "a boss must get a longer section")
+	mock.boss = false
+
+	# Harder duelists pair their notes earlier: a tier 3 answers in chords by
+	# round 2, an easy tier 1 still answers one key at a time.
+	for key in ["mimic", "rat"]:
+		mock.species = key
+		var tier := int(_battle.SPECIES_STYLE[key]["tier"])
+		var demo_t: Array = b.call("_make_pattern", 2)
+		var reply_t: Array = b.call("_make_reply", demo_t, 2)
+		var paired := false
+		for i in reply_t.size():
+			for j in range(i + 1, reply_t.size()):
+				if is_equal_approx(float(reply_t[i]["beat"]), float(reply_t[j]["beat"])) \
+						and int(reply_t[i]["type"]) != int(reply_t[j]["type"]):
+					paired = true
+		_ok(paired == (tier >= 3), "%s (tier %d) doubles at round 2: %s" % [key, tier, paired])
+
+	# A badly hurt duelist is bruised and slumped; a healthy one is untouched.
+	var actor := Node2D.new()
+	root.add_child(actor)
+	actor.set_meta("face_left", false)
+	actor.set_meta("slump", 0.0)
+	actor.set_meta("tint", Color.WHITE)
+	b.call("_apply_battered", actor, 1.0)
+	_ok(actor.modulate == Color.WHITE and is_zero_approx(actor.rotation),
+			"a duelist at full health must look untouched")
+	b.call("_apply_battered", actor, 0.1)
+	_ok(actor.modulate.r > actor.modulate.g, "a battered duelist must be bruised red")
+	_ok(absf(actor.rotation) > 0.01, "a battered duelist must slump")
+	actor.queue_free()
 
 	print("species checked: %d" % keys.size())
 	print("assertions     : %d" % _checks)
