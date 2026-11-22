@@ -68,6 +68,10 @@ var _round := 0
 var _beat_sec := 0.5
 var _lead := LEAD
 var _pattern: Array = []
+## The enemy's phrase for this round; the player answers it in `_pattern`.
+var _demo: Array = []
+## Last beat of the active pattern, so a short reply does not hold the camera.
+var _pattern_last_beat := 0.0
 var _judged: Array = []
 var _notes: Array = []
 var _dmg_dealt := 0
@@ -188,6 +192,10 @@ func _prepare_battle() -> void:
 
 
 func _bpm_for(enemy: Node) -> float:
+	# The species sets the tempo, and the generated track uses the same number.
+	var style := _style()
+	if style.has("bpm"):
+		return float(style["bpm"])
 	var sp := 90.0
 	var d = enemy.get("data")
 	if d is Dictionary:
@@ -439,7 +447,7 @@ func _build_hud() -> void:
 	_feedback.z_index = 6
 	_root.add_child(_feedback)
 
-	_howto = _label("F / G / H on the beat   -   every note lands", 15, Color("#a9a4b8"))
+	_howto = _label("F / G / H on the beat   -   the phrase comes back changed", 15, Color("#a9a4b8"))
 	_howto.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_howto.anchor_right = 1.0
 	_howto.offset_top = 372
@@ -746,54 +754,97 @@ func _begin_round() -> void:
 	_round += 1
 	if _howto != null:
 		_howto.visible = _round == 1
-	_pattern = _make_pattern(_round)
-	_build_notes()
+	_demo = _make_pattern(_round)
 	_enter_phase(P.DEMO)
 
 
-## Each species leans on one habit, so the same duel does not feel like the same
-## duel with a different portrait. `bonus` adds notes, `hold_every` sets how often
-## an attack becomes a long note (0 = never, 0 disables holds entirely), and
-## `rest_bias` shifts the roll towards the idle lane.
+## Each species has its own tempo, phrasing and answer, so no two duels read the
+## same on the rail. `density` decides how many beats carry a note, `offbeat`
+## how often one lands on the "and", `holds` how often an attack becomes a long
+## note, and `answer` is how the enemy's phrase comes back at the player - the
+## reply is a variation, never a copy.
+##
+## `bpm` must match tools/gen_battle_music.py: the notes fall on that grid.
 const SPECIES_STYLE := {
-	"goblin": {"bonus": 1, "hold_every": 0, "rest_bias": 0.0},
-	"skeleton": {"bonus": 0, "hold_every": 2, "rest_bias": 0.0},
-	"flying_eye": {"bonus": 0, "hold_every": 4, "rest_bias": 0.14},
-	"bat": {"bonus": 0, "hold_every": 4, "rest_bias": 0.10},
-	"mushroom": {"bonus": -1, "hold_every": 2, "rest_bias": 0.06},
-	"slime": {"bonus": 0, "hold_every": 5, "rest_bias": 0.04},
+	"rat": {"bpm": 152, "bonus": 1, "density": 0.95, "offbeat": 0.30,
+		"holds": 0, "rest_bias": 0.00, "answer": "mirror"},
+	"slime": {"bpm": 84, "bonus": 0, "density": 0.70, "offbeat": 0.05,
+		"holds": 3, "rest_bias": 0.12, "answer": "heavy"},
+	"bat": {"bpm": 138, "bonus": 0, "density": 0.86, "offbeat": 0.55,
+		"holds": 4, "rest_bias": 0.04, "answer": "echo"},
+	"mushroom": {"bpm": 92, "bonus": -1, "density": 0.62, "offbeat": 0.10,
+		"holds": 2, "rest_bias": 0.16, "answer": "sparse"},
+	"flying_eye": {"bpm": 126, "bonus": 0, "density": 0.80, "offbeat": 0.25,
+		"holds": 4, "rest_bias": 0.14, "answer": "retro"},
+	"goblin": {"bpm": 146, "bonus": 1, "density": 0.92, "offbeat": 0.15,
+		"holds": 0, "rest_bias": 0.00, "answer": "shift"},
+	"mimic": {"bpm": 108, "bonus": 0, "density": 0.78, "offbeat": 0.40,
+		"holds": 3, "rest_bias": 0.06, "answer": "bait"},
+	"skeleton": {"bpm": 132, "bonus": 0, "density": 0.88, "offbeat": 0.20,
+		"holds": 2, "rest_bias": 0.03, "answer": "chord"},
 }
 
 
-func _make_pattern(r: int) -> Array:
-	var style: Dictionary = {}
-	var key := ""
+func _style() -> Dictionary:
 	if _enemy != null and is_instance_valid(_enemy):
-		key = str(_enemy.get("species")).to_lower()
-	if SPECIES_STYLE.has(key):
-		style = SPECIES_STYLE[key]
-	var n := mini(4 + r + int(style.get("bonus", 0)), 9)
+		var key := str(_enemy.get("species")).to_lower()
+		if SPECIES_STYLE.has(key):
+			return SPECIES_STYLE[key]
+	return {}
+
+
+## One note. `hold` is only written when the note is long, because `has("hold")`
+## is what makes the rail draw a body behind the head.
+func _note(beat: float, t: int, hold := 0.0) -> Dictionary:
+	var d := {"beat": beat, "type": t}
+	if hold > 0.0:
+		d["hold"] = hold
+	return d
+
+
+func _set_pattern(arr: Array) -> void:
+	_pattern = arr
+	_pattern_last_beat = 0.0
+	for n in arr:
+		_pattern_last_beat = maxf(_pattern_last_beat, float(n["beat"]))
+
+
+## The enemy's phrase. Gaps are deliberate: a beat with no note is what the ear
+## remembers, and it keeps the phrase from reading as a metronome.
+func _make_pattern(r: int) -> Array:
+	var style := _style()
+	var n := clampi(4 + r + int(style.get("bonus", 0)), 3, 10)
+	var density: float = float(style.get("density", 0.88))
+	var offbeat: float = float(style.get("offbeat", 0.12))
 	var rest_bias: float = float(style.get("rest_bias", 0.0))
 	var arr: Array = []
 	for i in n:
+		if i > 0 and randf() > density:
+			continue
 		var t := ATTACK
 		var roll := randf()
-		if roll < 0.22 + rest_bias:
+		if roll < 0.26 + rest_bias:
 			t = IDLE
-		elif roll < 0.40:
+		elif roll < 0.46:
 			t = FEINT
-		arr.append({"beat": float(i), "type": t})
+		var beat := float(i)
+		if i > 0 and randf() < offbeat:
+			beat += 0.5
+		arr.append(_note(beat, t))
+	# At least two attacks: otherwise a round could be cleared by never pressing.
 	var attacks := 0
 	for note in arr:
 		if int(note["type"]) == ATTACK:
 			attacks += 1
-	if attacks < 2:
-		arr[0]["type"] = ATTACK
-		if n > 1:
-			arr[1]["type"] = ATTACK
-	# Roughly every third ATTACK note becomes a long note. Never the last note, so
-	# the tail always has a following beat to land against.
-	var every := int(style.get("hold_every", 3))
+	for i in arr.size():
+		if attacks >= 2:
+			break
+		if int(arr[i]["type"]) != ATTACK:
+			arr[i]["type"] = ATTACK
+			attacks += 1
+	# Long notes: every N-th attack, never the last one, so the tail always has
+	# a following beat to land against.
+	var every := int(style.get("holds", 3))
 	var seen := 0
 	for i in arr.size():
 		if int(arr[i]["type"]) != ATTACK:
@@ -802,6 +853,120 @@ func _make_pattern(r: int) -> Array:
 		if every > 0 and seen % every == 1 and i < arr.size() - 1:
 			arr[i]["hold"] = 1.0
 	return arr
+
+
+## The player's section: the same phrase, answered - never echoed. Which
+## variation depends on the species, and later rounds add double notes.
+func _make_reply(demo: Array, r: int) -> Array:
+	var kind := str(_style().get("answer", "shift"))
+	var out: Array = []
+	match kind:
+		"mirror":
+			# Attack answers feint, and the other way round.
+			for n in demo:
+				out.append(_note(float(n["beat"]), 2 - int(n["type"]),
+						float(n.get("hold", 0.0))))
+		"retro":
+			# Played backwards: the phrase lands tail-first.
+			var last: float = 0.0
+			for n in demo:
+				last = maxf(last, float(n["beat"]))
+			for n in demo:
+				out.append(_note(last - float(n["beat"]), int(n["type"])))
+		"echo":
+			# Each note is answered half a beat later in the next lane.
+			for n in demo:
+				var t := int(n["type"])
+				out.append(_note(float(n["beat"]), t))
+				out.append(_note(float(n["beat"]) + 0.5, (t + 1) % 3))
+		"sparse":
+			# Half the phrase, but every survivor is a long note.
+			for i in demo.size():
+				if i % 2 != 0:
+					continue
+				out.append(_note(float(demo[i]["beat"]), int(demo[i]["type"]), 1.0))
+		"heavy":
+			# Half the phrase, each strike landing with a partner.
+			for i in demo.size():
+				if i % 2 != 0:
+					continue
+				var b := float(demo[i]["beat"])
+				var t := int(demo[i]["type"])
+				out.append(_note(b, t))
+				out.append(_note(b, (t + 2) % 3))
+		"bait":
+			# Rests and feints trade keys: the rail has to be read again, memory
+			# of the demo's keys will get you hit.
+			for n in demo:
+				var t := int(n["type"])
+				if t == IDLE:
+					t = FEINT
+				elif t == FEINT:
+					t = IDLE
+				out.append(_note(float(n["beat"]), t, float(n.get("hold", 0.0))))
+		"chord":
+			# Marched back mirrored, then struck in a pair at the end.
+			for n in demo:
+				out.append(_note(float(n["beat"]), 2 - int(n["type"])))
+			if not out.is_empty():
+				var last: Dictionary = out[out.size() - 1]
+				out.append(_note(float(last["beat"]), (int(last["type"]) + 1) % 3))
+		_:
+			# Shifted onto the off-beat, with a grace note on the end.
+			for n in demo:
+				out.append(_note(float(n["beat"]) + 0.5, int(n["type"])))
+			if not out.is_empty():
+				out.append(_note(float(out[out.size() - 1]["beat"]) + 1.0, ATTACK))
+	# Later rounds are the challenge: a second lane struck on the same beat, so
+	# the player has to press two keys in one breath.
+	if r >= 3:
+		var extra: Array = []
+		for n in out:
+			if randf() < 0.34:
+				var t := (int(n["type"]) + 1) % 3
+				if not _has_note(out, float(n["beat"]), t):
+					extra.append(_note(float(n["beat"]), t))
+		out.append_array(extra)
+		# A round that promises doubles must actually contain one.
+		if not _has_double(out) and out.size() > 1:
+			var i := out.size() / 2
+			var base: Dictionary = out[i]
+			for step in [1, 2]:
+				var t: int = (int(base["type"]) + int(step)) % 3
+				if not _has_note(out, float(base["beat"]), t):
+					out.append(_note(float(base["beat"]), t))
+					break
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["beat"]) < float(b["beat"]))
+	# A reply that happens to match the phrase is a copy: nudge one note off the
+	# grid so the section can never be played from memory alone.
+	if _signature(out) == _signature(demo) and not out.is_empty():
+		out[0]["beat"] = float(out[0]["beat"]) + 0.5
+	return out
+
+
+func _has_note(arr: Array, beat: float, t: int) -> bool:
+	for n in arr:
+		if int(n["type"]) == t and is_equal_approx(float(n["beat"]), beat):
+			return true
+	return false
+
+
+## True when two different lanes are struck on the same beat.
+func _has_double(arr: Array) -> bool:
+	for i in arr.size():
+		for j in range(i + 1, arr.size()):
+			if is_equal_approx(float(arr[i]["beat"]), float(arr[j]["beat"])) \
+					and int(arr[i]["type"]) != int(arr[j]["type"]):
+				return true
+	return false
+
+
+func _signature(arr: Array) -> String:
+	var parts: PackedStringArray = []
+	for n in arr:
+		parts.append("%.2f:%d" % [float(n["beat"]), int(n["type"])])
+	return ",".join(parts)
 
 
 func _build_notes() -> void:
@@ -853,6 +1018,14 @@ func _clear_notes() -> void:
 func _enter_phase(p: int) -> void:
 	_phase = p
 	_phase_time = 0.0
+	# The player's turn is the answer, not the echo: the phrase changes here.
+	# The enemy's turn plays the phrase it was given.
+	if p == P.PLAYER and not _demo.is_empty():
+		_set_pattern(_make_reply(_demo, _round))
+		_build_notes()
+	elif p == P.DEMO:
+		_set_pattern(_demo)
+		_build_notes()
 	_judged.clear()
 	for i in _pattern.size():
 		_judged.append(false)
@@ -920,11 +1093,12 @@ func _hide_turn_banner() -> void:
 
 
 func _note_time(i: int) -> float:
-	return (float(i) + _lead) * _beat_sec
+	# Notes carry their own beat, so half-beat and gapped phrases both work.
+	return (float(_pattern[i]["beat"]) + _lead) * _beat_sec
 
 
 func _phase_end() -> float:
-	return (float(_pattern.size()) + _lead) * _beat_sec + 0.35
+	return (float(_pattern_last_beat) + _lead) * _beat_sec + 0.35
 
 
 func _process(delta: float) -> void:
