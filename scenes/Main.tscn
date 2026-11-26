@@ -47,10 +47,10 @@ hframes = 4
 vframes = 3
 
 [node name="Camera2D" type="Camera2D" parent="Player(CharacterBody2D)" unique_id=1612704971]
-limit_left = 0
-limit_top = 0
-limit_right = 1376
-limit_bottom = 1376
+limit_left = -3
+limit_top = -1
+limit_right = 1373
+limit_bottom = 1375
 position_smoothing_enabled = true
 position_smoothing_speed = 8.0
 

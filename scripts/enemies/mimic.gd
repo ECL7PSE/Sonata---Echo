@@ -10,25 +10,23 @@ class_name Mimic
 ##
 ##   DORMANT -> OPENING -> HOLD -> TRANSFORM -> SETTLE -> the normal FSM
 ##
-## Once it leaves DORMANT it never returns. The leash still applies afterwards -
-## an awake mimic that is outrun walks home and dozes - but "home" for an awake
-## mimic is a dormant-looking chest it cannot turn back into, so it simply stops.
+## Once it leaves DORMANT it never returns. An awake mimic stays stationary and
+## uses the same interaction and duel flow as every other enemy.
 ##
 ## Two things make the disguise work, and both are easy to break:
 ##
 ##   the dormant sprite is the REAL C001_01 chest art at 1:1, and
-##   the dormant hitbox is chest-sized, not creature-sized.
+##   the dormant collision and interaction bounds are chest-sized, not
+##   creature-sized.
 ##
-## Sizing the dormant hitbox off the awake body would give a closed chest a
+## Sizing the dormant bounds off the awake body would give a closed chest a
 ## creature-sized target and make the trap unreadable.
 
 enum Chain { DORMANT, OPENING, HOLD, TRANSFORM, SETTLE, AWAKE }
 
 ## Pixels at which the player wakes a dormant mimic by walking near.
-@export var wake_radius := 56.0
-## Pixels at which the transform's first frame shoves the player away.
-@export var burst_push_radius := 24.0
-@export var burst_push := 220.0
+const WAKE_RADIUS := 32.0
+@export var wake_radius := WAKE_RADIUS
 ## Shake on the frame the lid comes off.
 const SHAKE_PX := 2.0
 @export var shake_time := 0.15
@@ -44,7 +42,6 @@ const TRANSFORM_FPS := 12.0
 
 var chain: int = Chain.DORMANT
 var _chain_time := 0.0
-var _prox: Area2D
 var _shake_left := 0.0
 var _scale_tween: Tween
 ## Set once the burst has begun, so nothing can start it a second time.
@@ -64,6 +61,8 @@ func dormant_reset() -> void:
 	sprite.modulate = Color(1, 1, 1, 1)
 	sprite.position = Vector2.ZERO
 	sprite.scale = Vector2(data.get("dormant_scale", 1.0), data.get("dormant_scale", 1.0))
+	active = false
+	state = State.IDLE
 	_apply_dormant_profile()
 	if player != null:
 		var dist := player.global_position.distance_to(global_position)
@@ -73,42 +72,24 @@ func dormant_reset() -> void:
 
 func _ready() -> void:
 	super._ready()
-	_build_proximity()
 	_apply_dormant_profile()
 	set_physics_process(true)
 
 
-## The area that wakes this mimic when the player walks close.
-##
-## Built in code rather than in a second scene so the mimic shares enemy.tscn
-## and there is exactly one enemy scene to keep correct.
-func _build_proximity() -> void:
-	_prox = Area2D.new()
-	_prox.name = "Proximity"
-	_prox.collision_layer = Layers.ENEMY_TRIGGER
-	_prox.collision_mask = Layers.trigger_mask()
-	var shape := CollisionShape2D.new()
-	shape.name = "Shape"
-	var circle := CircleShape2D.new()
-	circle.radius = wake_radius
-	shape.shape = circle
-	_prox.add_child(shape)
-	add_child(_prox)
-	_prox.body_entered.connect(_on_proximity_entered)
-
-
-## Swaps in the chest art, at 1:1, with a chest-sized hurtbox.
+## Swaps to the chest art and sizes the same interaction area around it.
 func _apply_dormant_profile() -> void:
 	var dscale := float(data.get("dormant_scale", 1.0))
 	var dbody: Vector2i = data.get("dormant_body", Vector2i(16, 15))
 	sprite.scale = Vector2(dscale, dscale)
 	var dw := float(dbody.x) * dscale
 	var dh := float(dbody.y) * dscale
-	hurt_shape.shape = _rect(1.15 * dw, 1.15 * dh)
-	hurt_shape.position = Vector2(0, -0.5 * dh)
 	body_shape.shape = _rect(dw, dh)
 	body_shape.position = Vector2(0, -0.5 * dh)
-	_set_hitbox_active(false)
+	_cluster_width = dw
+	var wake_shape := CircleShape2D.new()
+	wake_shape.radius = wake_radius
+	interaction_shape.shape = wake_shape
+	interaction_shape.position = Vector2.ZERO
 	_play("dormant")
 
 
@@ -152,18 +133,23 @@ func activate() -> void:
 
 
 ## Wakes on proximity, but only if it has not woken already.
-func _on_proximity_entered(body: Node2D) -> void:
-	if body == null or not body.has_method("take_damage"):
-		return
-	_burst()
+func _on_interaction_body_entered(body: Node2D) -> void:
+	super._on_interaction_body_entered(body)
+	if chain == Chain.DORMANT and body != null \
+			and body.has_method("take_damage"):
+		player = body
+		_burst()
 
 
 ## A slash on a dormant mimic wakes it and does nothing else.
-func _on_hurtbox_area_entered(area: Area2D) -> void:
+func _on_interaction_area_entered(area: Area2D) -> void:
 	if chain == Chain.DORMANT:
+		var attacker := area.get_parent()
+		if attacker is Node2D:
+			player = attacker
 		_burst()
 		return
-	super._on_hurtbox_area_entered(area)
+	super._on_interaction_area_entered(area)
 
 
 ## The lid comes off.
@@ -171,7 +157,7 @@ func _burst() -> void:
 	if _has_burst or chain != Chain.DORMANT:
 		return
 	_has_burst = true
-# The burst is the one-off with no matching "action" in the map: it is the
+	# The burst is the one-off with no matching "action" in the map: it is the
 	# chest splitting open, not a hit. The guard above already makes it
 	# once-only, so a re-burst cannot double up.
 	_sfx_enemy("burst")
@@ -184,30 +170,15 @@ func _burst() -> void:
 	var flash := create_tween()
 	flash.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.18)
 	_shake_left = shake_time
-	_set_hitbox_active_deferred(false)
 	_start_scale_tween()
 	# NO extra frame_changed connection here: Enemy._ready already connects
 	# _on_frame_changed, and connecting the same callable twice is an engine error
 	# (and would double-apply the anchor on every frame of the burst).
 
 
-## Grows the sprite from the chest profile to the awake one.
-## _set_hitbox_active for use from inside an Area2D callback.
-##
-## A burst can be triggered by area_entered, which runs during a physics query
-## flush; toggling a CollisionShape2D there makes the engine throw "Can't change
-## this state while flushing queries". The same problem and the same reason
-## loot.gd defers its coin spawns.
-func _set_hitbox_active_deferred(on: bool) -> void:
-	var reach := 0.0
-	if on:
-		reach = _facing_x() * 0.45 * _body_w
-	hit_shape.set_deferred("disabled", not on)
-	hit_shape.position = Vector2(reach, -0.35 * _body_h)
-
-
-## Swaps the hitboxes over to the awake profile once the growth is done.
+## Restores the awake interaction bounds after the chest disguise.
 func _apply_awake_shapes() -> void:
+	_cluster_width = _body_w + float(_sprite_count - 1) * _sprite_gap
 	_size_shapes()
 
 
@@ -216,6 +187,7 @@ func _apply_awake_shapes() -> void:
 ## Deliberately does NOT call super: Enemy defines no _process, and invoking a
 ## virtual the parent does not implement is at best noise and at worst an error.
 func _process(delta: float) -> void:
+	super._process(delta)
 	if _shake_left > 0.0:
 		_shake_left = maxf(_shake_left - delta, 0.0)
 		# Decaying jitter. A constant offset would read as the sprite being
@@ -259,48 +231,19 @@ func _enter_chain(next: int) -> void:
 		Chain.TRANSFORM:
 			_play("transform")
 			sprite.frame = 0
-			# The shove lands on the FIRST frame of the transform, which is the
-			# frame the creature becomes tall enough to be pushing at.
-			_burst_push()
 		Chain.SETTLE:
 			_play("idle_transformed")
-
-
-## Knocks the player away with NO damage.
-##
-## The point is to buy a beat of space, not to punish approach: taking a hit for
-## standing next to a chest you have not attacked yet is the one thing that would
-## make the disguise feel unfair. Applied straight to velocity rather than
-## through take_damage, which correctly refuses a zero-damage hit.
-func _burst_push() -> void:
-	if player == null or not is_instance_valid(player):
-		return
-	var away := player.global_position - global_position
-	if away.length() > burst_push_radius:
-		return
-	if away.length() < 0.001:
-		away = Vector2.UP
-	player.velocity += away.normalized() * burst_push
-	player.take_damage(0, global_position)
 
 
 ## Finished pretending. Hand over to the inherited FSM for good.
 func _awaken() -> void:
 	chain = Chain.AWAKE
 	_apply_awake_shapes()
-	# Size the shapes now rather than only at the end of the tween, so the first
-	# awake frame is already hitbox-correct.
-	sprite.scale = Vector2(float(data.get("scale", 1.0)), float(data.get("scale", 1.0)))
-	# The inherited FSM is already running; it is simply gated out by
-	# _physics_process until the chain reaches AWAKE.
-	state = State.CHASE
-	_play("walk")
-	# An awake mimic counts as having fought even though it never went through
-	# activate(): it woke by proximity, not by a room trigger. Without this it
-	# would leash, go IDLE, and then refuse to re-engage - awake and inert.
-	_has_been_activated = true
+	sprite.scale = Vector2(_scale, _scale)
+	state = State.IDLE
 	active = true
 	_last_swing_hit = -1
+	_play("idle")
 
 
 ## The inherited FSM does not run until the mimic is awake.
@@ -313,7 +256,7 @@ func _physics_process(delta: float) -> void:
 ## HOLD sits between them, and a tween with a gap would snap at the seam, which
 ## is exactly what "no snap" is asking to avoid.
 func _start_scale_tween() -> void:
-	var to := float(data.get("scale", 1.0))
+	var to := _scale
 	if _scale_tween != null and _scale_tween.is_valid():
 		_scale_tween.kill()
 	_scale_tween = create_tween()

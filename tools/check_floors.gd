@@ -1,10 +1,8 @@
 extends SceneTree
 
-## Procedural floors: the same rooms must lay out differently on each descent.
+## Enemy placement is independent of floor index and run seed.
 ##
-## The dungeon seeds the spawner with (run seed, depth). This proves that two
-## different floors give different head counts and different spawn scatter,
-## while every count still sits inside the spawner's own limits.
+## Each populated room must retain exactly one centre spawn on every floor.
 
 const SPAWNER := preload("res://scripts/enemies/enemy_spawner.gd")
 const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
@@ -17,31 +15,29 @@ func _initialize() -> void:
 	var rooms: Dictionary = builder.ROOMS
 	var names: Array = rooms.keys()
 
-	var a := _fingerprint(names, rooms, 12345, 1)
-	var b := _fingerprint(names, rooms, 12345, 2)
-	var c := _fingerprint(names, rooms, 999, 1)
-	print("floor 1 : ", a)
-	print("floor 2 : ", b)
-	print("other   : ", c)
+	var actual := _fingerprint(names, rooms)
+	var expected: Array[String] = []
+	for room_name in names:
+		var room: Rect2i = rooms[room_name]
+		if SPAWNER.is_enemy_room(room_name):
+			expected.append("%s:1@%s"
+					% [room_name, SPAWNER.room_center_cell(room)])
+	print("enemy plan: ", actual)
+	_check(actual == " ".join(expected),
+			"populated rooms must each have one fixed centre spawn")
 
-	_check(a != b, "the same run must lay out floor 2 differently from floor 1")
-	_check(a != c, "a different run must lay out floor 1 differently")
-
-	for d in [1, 2, 3, 7]:
-		SPAWNER.set_floor(4242, d)
-		for room_name in names:
-			var room: Rect2i = rooms[room_name]
-			if not SPAWNER.is_enemy_room(room_name):
-				continue
-			var n := SPAWNER.enemy_count(room, room_name)
-			_check(n >= SPAWNER.MIN_ENEMY and n <= SPAWNER.MAX_ENEMY,
-				"%s on floor %d asked for %d heads" % [room_name, d, n])
+	for room_name in names:
+		var room: Rect2i = rooms[room_name]
+		if not SPAWNER.is_enemy_room(room_name):
+			continue
+		var n := SPAWNER.enemy_count(room, room_name)
+		_check(n == SPAWNER.ENEMIES_PER_ROOM,
+			"%s asked for %d entities" % [room_name, n])
 
 	builder.free()
-	SPAWNER.set_floor(1, 1)
 
 	if _fails.is_empty():
-		print("RESULT: OK - every floor reshuffles")
+		print("RESULT: OK - one fixed centre spawn per populated room")
 	else:
 		for f in _fails:
 			print("FAIL: " + f)
@@ -49,9 +45,8 @@ func _initialize() -> void:
 	quit()
 
 
-## Counts plus the first spawn cell of every room, for one floor.
-func _fingerprint(names: Array, rooms: Dictionary, run_seed: int, depth: int) -> String:
-	SPAWNER.set_floor(run_seed, depth)
+## Counts and centre cells for every populated room.
+func _fingerprint(names: Array, rooms: Dictionary) -> String:
 	var parts: Array[String] = []
 	for room_name in names:
 		var room: Rect2i = rooms[room_name]

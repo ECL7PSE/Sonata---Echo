@@ -3,6 +3,7 @@ extends Node2D
 ## Bench = checkpoint. Resting saves the run, heals, and opens the shop.
 
 const GothUI := preload("res://scripts/ui/gothic_ui.gd")
+const InteractPrompt := preload("res://scripts/ui/interact_prompt.gd")
 
 const REACH := 44.0
 
@@ -70,20 +71,8 @@ func _draw() -> void:
 
 
 func _build_prompt() -> void:
-	_prompt = Label.new()
-	_prompt.text = "E  REST"
-	_prompt.add_theme_font_override("font", preload("res://Assets/UI/pixel_ui/font/pixel_ui_font.fnt"))
-	_prompt.add_theme_font_size_override("font_size", 20)
-	_prompt.add_theme_color_override("font_color", Color("#ffd166"))
-	_prompt.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_prompt.add_theme_constant_override("shadow_offset_x", 2)
-	_prompt.add_theme_constant_override("shadow_offset_y", 2)
-	_prompt.position = Vector2(-80, -66)
-	_prompt.size = Vector2(160, 24)
-	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_prompt.visible = false
+	_prompt = InteractPrompt.make("E  REST", Vector2(-80, -66))
 	add_child(_prompt)
-
 
 func _build_menu() -> void:
 	var page := CanvasLayer.new()

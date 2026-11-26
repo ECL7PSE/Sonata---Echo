@@ -11,20 +11,19 @@ extends Node
 ##   bit 2 enemy         enemy bodies
 ##   bit 3 player        the player body
 ##   bit 4 player_hitbox the player's slash
-##   bit 5 enemy_hitbox  enemy attacks (damages the player)
+##   bit 5 unused        overworld enemies do not attack
 ##   bit 6 pickup        coins
-##   bit 7 enemy_trigger room aggro areas, mimic proximity
-##   bit 8 enemy_hurtbox enemy bodies (receives the slash)
+##   bit 7 enemy_trigger room wake areas, mimic proximity
+##   bit 8 enemy_interactable enemy interaction areas (slash starts duel only)
 class_name Layers
 
 const WORLD := 1 << 0
 const ENEMY := 1 << 1
 const PLAYER := 1 << 2
 const PLAYER_HITBOX := 1 << 3
-const ENEMY_HITBOX := 1 << 4
 const PICKUP := 1 << 5
 const ENEMY_TRIGGER := 1 << 6
-const ENEMY_HURTBOX := 1 << 7
+const ENEMY_INTERACTABLE := 1 << 7
 
 
 ## What a player body must collide with.
@@ -58,19 +57,9 @@ static func trap_mask() -> int:
 	return WORLD | PLAYER
 
 
-## What the player's slash looks for: enemy hurtboxes.
+## What the player's slash looks for: enemy interaction areas.
 static func player_hitbox_mask() -> int:
-	return ENEMY_HURTBOX
-
-
-## What an enemy hurtbox listens for: the player's slash.
-static func enemy_hurtbox_mask() -> int:
-	return PLAYER_HITBOX
-
-
-## What an enemy attack listens for: the player.
-static func enemy_hitbox_mask() -> int:
-	return PLAYER
+	return ENEMY_INTERACTABLE
 
 
 ## What a coin listens for: the player.

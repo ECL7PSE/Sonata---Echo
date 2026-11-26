@@ -10,11 +10,15 @@ extends Node2D
 ## which is written out explicitly so the result is tuned to the target style
 ## rather than inherited from the source artwork.
 ##
-## The layout is five halls wired together:
+## The layout is a nine-room serpentine route:
 ##
-##      cistern --- crypt --- forge
+##      hall --- cistern --- crypt
+##                            |
+##      eye_well --- vault --- forge
 ##         |
-##        hall --- vault
+##      goblin --- mimic
+##                   |
+##               bone_hall
 ##
 ## How the three surfaces are built:
 ##
@@ -51,14 +55,35 @@ const SPAWNER := preload("res://scripts/enemies/enemy_spawner.gd")
 
 const GRID := 16            # tile size in source pixels
 const SCALE := 2.0         # the Dungeon node is scaled 2x, see dungeon.tscn
-const MAP_W := 43
-## The map grew downward, not sideways, so no existing room had to move.
-## 43 columns x 43 rows: the old 31 rows plus 12 rows of southern dungeon.
-const MAP_H := 43
+const ROOM_WIDTH := 10
+const ROOM_HEIGHT := 8
+const CORRIDOR_LENGTH := 4
+const CORRIDOR_WIDTH := 3
+const BOSS_ROOM_WIDTH_MULTIPLIER := 2
+const BOSS_ROOM_HEIGHT_MULTIPLIER := 1.5
+const BOSS_ROOM_WIDTH := ROOM_WIDTH * BOSS_ROOM_WIDTH_MULTIPLIER
+const BOSS_ROOM_HEIGHT := int(ROOM_HEIGHT * BOSS_ROOM_HEIGHT_MULTIPLIER)
+const ROOM_MARGIN := 2
+const ROOM_DOOR_OFFSET_X := int((ROOM_WIDTH - CORRIDOR_WIDTH) / 2.0)
+const ROOM_DOOR_OFFSET_Y := int((ROOM_HEIGHT - CORRIDOR_WIDTH) / 2.0)
+const BOSS_DOOR_OFFSET_X := int((BOSS_ROOM_WIDTH - CORRIDOR_WIDTH) / 2.0)
+
+const ROOM_X_LEFT := ROOM_MARGIN
+const ROOM_X_MIDDLE := ROOM_X_LEFT + ROOM_WIDTH + CORRIDOR_LENGTH
+const ROOM_X_RIGHT := ROOM_X_MIDDLE + ROOM_WIDTH + CORRIDOR_LENGTH
+const ROOM_Y_TOP := ROOM_MARGIN
+const ROOM_Y_MIDDLE := ROOM_Y_TOP + ROOM_HEIGHT + CORRIDOR_LENGTH
+const ROOM_Y_BOTTOM := ROOM_Y_MIDDLE + ROOM_HEIGHT + CORRIDOR_LENGTH
+const BOSS_ROOM_X := ROOM_X_MIDDLE + int((ROOM_WIDTH - BOSS_ROOM_WIDTH) / 2.0)
+const BOSS_ROOM_Y := ROOM_Y_BOTTOM + ROOM_HEIGHT + CORRIDOR_LENGTH
+
+# The map bounds follow the layout, including the boss room and its wall margin.
+const MAP_W := ROOM_X_RIGHT + ROOM_WIDTH + ROOM_MARGIN
+const MAP_H := BOSS_ROOM_Y + BOSS_ROOM_HEIGHT + ROOM_MARGIN
 
 # The player's collider in Main.tscn is 43x67 px, which is 1.4 x 2.1 cells at
 # SCALE 2, so a corridor has to be 3 cells (96 px) across to be walkable.
-const MIN_CORRIDOR := 3
+const MIN_CORRIDOR := CORRIDOR_WIDTH
 
 ## The player's BODY collider, in RENDERED px. Must track the RectangleShape2D
 ## in Main.tscn.
@@ -234,32 +259,23 @@ const SRC_WALL := 1      # cap + collision-only block, collides
 const SRC_EDGE := 2      # 1px aqua outline, no collision
 
 # --- Layout ----------------------------------------------------------------
-# Nine halls. Each is a plain rectangle: the wall is drawn as the ring of rock
-# around it, so a room is exactly the rectangle below.
-#
-# The five original rooms are unchanged and must stay byte-identical: they own
-# the collision the rest of the game balances around. The four southern rooms
-# were appended below y=31, so the map grew downward (MAP_H) rather than
-# sideways and no existing room moved.
-const ROOM_CISTERN := Rect2i(4, 5, 11, 8)    # west hall
-const ROOM_CRYPT := Rect2i(18, 5, 10, 8)     # north burial room
-const ROOM_FORGE := Rect2i(33, 5, 8, 8)      # north-east workshop
-const ROOM_HALL := Rect2i(4, 21, 12, 8)      # the spawn hall
-const ROOM_VAULT := Rect2i(22, 21, 12, 8)    # treasure vault
-## Appended rooms. Monster difficulty rises with walking distance from the start.
-const ROOM_EYEWELL := Rect2i(31, 33, 8, 7)   # flying eye
-const ROOM_GOBLIN := Rect2i(20, 33, 8, 7)    # goblin
-const ROOM_MIMIC := Rect2i(10, 33, 8, 7)     # mimic
-## bone_hall starts at x=2, NOT x=1. At x=1 this room's two-cell wall band would
-## need cells at x=-1, which do not exist, so the left wall - and the outline
-## that traces it - would be clipped against the grid edge. x=2 puts the band at
-## x=0,1: the same two-cell margin every other room in the dungeon has.
-const ROOM_BONE := Rect2i(2, 31, 6, 9)       # skeleton, the furthest room
+# Regular rooms share one size and use the same grid pitch. The oversized boss
+# room sits beyond the last regular room, centered on its corridor entrance.
+const ROOM_HALL := Rect2i(ROOM_X_LEFT, ROOM_Y_TOP, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_CISTERN := Rect2i(ROOM_X_MIDDLE, ROOM_Y_TOP, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_CRYPT := Rect2i(ROOM_X_RIGHT, ROOM_Y_TOP, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_FORGE := Rect2i(ROOM_X_RIGHT, ROOM_Y_MIDDLE, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_VAULT := Rect2i(ROOM_X_MIDDLE, ROOM_Y_MIDDLE, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_EYEWELL := Rect2i(ROOM_X_LEFT, ROOM_Y_MIDDLE, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_GOBLIN := Rect2i(ROOM_X_LEFT, ROOM_Y_BOTTOM, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_MIMIC := Rect2i(ROOM_X_MIDDLE, ROOM_Y_BOTTOM, ROOM_WIDTH, ROOM_HEIGHT)
+const ROOM_BONE := Rect2i(BOSS_ROOM_X, BOSS_ROOM_Y,
+		BOSS_ROOM_WIDTH, BOSS_ROOM_HEIGHT)
 const ROOMS := {
+	"hall": ROOM_HALL,
 	"cistern": ROOM_CISTERN,
 	"crypt": ROOM_CRYPT,
 	"forge": ROOM_FORGE,
-	"hall": ROOM_HALL,
 	"vault": ROOM_VAULT,
 	"eye_well": ROOM_EYEWELL,
 	"goblin_den": ROOM_GOBLIN,
@@ -268,58 +284,32 @@ const ROOMS := {
 }
 const ROOM_START := ROOM_HALL
 
-# Corridors overlap or abut the rooms they join, so the dungeon is connected by
-# construction and there is no separate route list to drift out of sync. Every
-# one is 3 cells across in its short direction.
-#
-# The forge->vault stair is deliberately ABSENT. The forge holds three crates and
-# a chest, and it used to run on into a long stair that led nowhere worth going;
-# removing the corridor turns it into a proper dead end, so that branch now
-# terminates at the forge instead of dangling.
+# Corridors occupy the fixed gap between rooms and are centered on their
+# entrances; each is CORRIDOR_LENGTH long and CORRIDOR_WIDTH cells wide.
 const CORRIDORS := [
-	Rect2i(14, 8, 4, 3),    # cistern -> crypt
-	Rect2i(27, 8, 6, 3),    # crypt -> forge
-	Rect2i(8, 13, 3, 8),    # cistern -> hall  (the long west stair)
-	Rect2i(16, 24, 6, 3),   # hall -> vault
-	# The appended route. One spine, no branches, no dead-end corridors:
-	#   forge -> (the long south shaft) -> eye_well -> goblin_den
-	#         -> mimic_den -> bone_hall
-	# Every link is 3 cells across at minimum so the 43x67 player collider always
-	# clears, and each corridor joins exactly two spaces.
-	Rect2i(36, 13, 3, 20),  # forge -> eye_well (the long south shaft)
-	Rect2i(28, 36, 4, 3),   # eye_well -> goblin_den
-	Rect2i(18, 36, 4, 3),   # goblin_den -> mimic_den
-	Rect2i(8, 36, 3, 3),    # mimic_den -> bone_hall
+	Rect2i(ROOM_X_LEFT + ROOM_WIDTH, ROOM_Y_TOP + ROOM_DOOR_OFFSET_Y,
+			CORRIDOR_LENGTH, CORRIDOR_WIDTH), # hall -> cistern
+	Rect2i(ROOM_X_MIDDLE + ROOM_WIDTH, ROOM_Y_TOP + ROOM_DOOR_OFFSET_Y,
+			CORRIDOR_LENGTH, CORRIDOR_WIDTH), # cistern -> crypt
+	Rect2i(ROOM_X_RIGHT + ROOM_DOOR_OFFSET_X,
+			ROOM_Y_TOP + ROOM_HEIGHT, CORRIDOR_WIDTH, CORRIDOR_LENGTH), # crypt -> forge
+	Rect2i(ROOM_X_MIDDLE + ROOM_WIDTH, ROOM_Y_MIDDLE + ROOM_DOOR_OFFSET_Y,
+			CORRIDOR_LENGTH, CORRIDOR_WIDTH), # forge -> vault
+	Rect2i(ROOM_X_LEFT + ROOM_WIDTH, ROOM_Y_MIDDLE + ROOM_DOOR_OFFSET_Y,
+			CORRIDOR_LENGTH, CORRIDOR_WIDTH), # vault -> eye_well
+	Rect2i(ROOM_X_LEFT + ROOM_DOOR_OFFSET_X,
+			ROOM_Y_MIDDLE + ROOM_HEIGHT, CORRIDOR_WIDTH, CORRIDOR_LENGTH), # eye_well -> goblin
+	Rect2i(ROOM_X_LEFT + ROOM_WIDTH, ROOM_Y_BOTTOM + ROOM_DOOR_OFFSET_Y,
+			CORRIDOR_LENGTH, CORRIDOR_WIDTH), # goblin -> mimic
+	Rect2i(BOSS_ROOM_X + BOSS_DOOR_OFFSET_X,
+			ROOM_Y_BOTTOM + ROOM_HEIGHT, CORRIDOR_WIDTH, CORRIDOR_LENGTH), # mimic -> boss
 ]
 
-## Two lights for the south shaft, at the WALL EDGE and alternating sides.
+## Minimum lights for rooms that need guaranteed illumination.
 ##
-## The generated torch pass deliberately refuses corridor cells (_torch_ok
-## returns false for anything _in_corridor) so a light can never pinch a
-## doorway the player has to walk through. This shaft is the one place that rule
-## has to bend: it is 20 cells of dead straight corridor with no side doors, so
-## lighting it from the rooms alone leaves a black tunnel. These two are listed
-## rather than generated because they must land in fixed positions to read as
-## evenly spaced markers on a long climb.
-##
-## They sit on the shaft's EDGE cells (x=36 and x=38) rather than down its middle
-## (x=37), and alternate sides. A torch in the middle of a 3-wide corridor reads
-## as a bollard in the middle of the road; pushed against the wall the glow rakes
-## across the opposite wall cap, which is what every other torch in the dungeon
-## does. A torch carries no collision shape at all, so this does NOT narrow the
-## walkable width - all three columns stay open, and check_layout asserts it.
-const SHAFT_LIGHTS: Array[Vector2i] = [
-	Vector2i(36, 19),  # west edge of the shaft, ~1/3 down
-	Vector2i(38, 26),  # east edge of the shaft, ~2/3 down
-]
-
-## Minimum lights for the APPENDED rooms only.
-##
-## The global TORCH_MIN_PER_ROOM is 0, which is deliberate for the original five
-## (their lighting is already balanced and must not move), but it means a newly
-## added room can be handed zero torches and render as an unlit black box. Only
-## the rooms listed here are guaranteed a floor; rooms absent from this table
-## keep the original random behaviour.
+## the global TORCH_MIN_PER_ROOM is 0, which means an unlisted room can be handed
+## zero torches and render as an unlit black box. Listed rooms are guaranteed a
+## floor; rooms absent from this table keep the random behaviour.
 const ROOM_MIN_TORCH := {
 	"eye_well": 2,
 	"goblin_den": 2,
@@ -367,11 +357,8 @@ func _build_torches(grid: Array) -> Array[Vector2i]:
 
 		# How many this room gets. Drawn per room, so rooms genuinely differ.
 		#
-		# The four APPENDED rooms carry ROOM_MIN_TORCH instead of relying on the
-		# global range: the brief asks every new room for at least two lights,
-		# and TORCH_MIN_PER_ROOM is 0, so the random draw can legitimately hand
-		# one of them a single torch or none at all. The five original rooms stay
-		# on the old range - their lighting is already tuned and must not move.
+		# Rooms in ROOM_MIN_TORCH get that minimum in addition to the random draw;
+		# all other rooms retain the original global range.
 		var want := rng.randi_range(TORCH_MIN_PER_ROOM, TORCH_MAX_PER_ROOM)
 		want = maxi(want, int(ROOM_MIN_TORCH.get(room_name, 0)))
 		var placed := 0
@@ -398,6 +385,16 @@ func _build_torches(grid: Array) -> Array[Vector2i]:
 ## room rect can still be the corridor's throat. A torch there would light a
 ## doorway and pinch the passage the player has to walk through.
 func _torch_ok(grid: Array, cell: Vector2i) -> bool:
+	for room_name in SPAWNER.ROOM_MONSTER:
+		var centre := _room_centre(ROOMS[room_name])
+		if absi(cell.x - centre.x) <= 1 \
+				and absi(cell.y - centre.y) <= 1:
+			return false
+	for room_name in SPAWNER.MIMIC_DENS:
+		var centre := _room_centre(ROOMS[room_name])
+		if absi(cell.x - centre.x) <= 1 \
+				and absi(cell.y - centre.y) <= 1:
+			return false
 	for blocked in _blocking_prop_cells():
 		if blocked == cell:
 			return false
@@ -419,65 +416,85 @@ func _too_close(placed: Array[Vector2i], cell: Vector2i) -> bool:
 	return false
 
 
-# One chest per reward room plus one in the spawn hall, so clearing the route
-# pays. Each sits three cells clear of anything else, because _clearance()
-# needs a 3x3 of walkable floor around a chest or the player can never stand
-# beside it to open it.
+# Enemy-room chests sit toward the lower-right wall with a two-cell wall margin,
+# leaving the centred enemy and its interaction area clear.
+const CHEST_MARGIN := 2
+const CHEST_OFFSET := Vector2i(
+		int(ROOM_WIDTH / 2.0) - CHEST_MARGIN,
+		int(ROOM_HEIGHT / 2.0) - CHEST_MARGIN)
+const CHEST_ENEMY_CLEARANCE := 32.0
+const CHEST_VISIBLE_SIZE := Vector2(24.0, 24.0)
+const CHEST_HALL := Vector2i(ROOM_X_LEFT + 2,
+		ROOM_Y_TOP + ROOM_HEIGHT - 2)
+const CHEST_CRYPT := Vector2i(
+		ROOM_X_RIGHT + int(ROOM_WIDTH / 2.0) + CHEST_OFFSET.x,
+		ROOM_Y_TOP + int(ROOM_HEIGHT / 2.0) + CHEST_OFFSET.y)
+const CHEST_FORGE := Vector2i(
+		ROOM_X_RIGHT + int(ROOM_WIDTH / 2.0) + CHEST_OFFSET.x,
+		ROOM_Y_MIDDLE + int(ROOM_HEIGHT / 2.0) + CHEST_OFFSET.y)
+const CHEST_VAULT := Vector2i(
+		ROOM_X_MIDDLE + int(ROOM_WIDTH / 2.0) + CHEST_OFFSET.x,
+		ROOM_Y_MIDDLE + int(ROOM_HEIGHT / 2.0) + CHEST_OFFSET.y)
+const CHEST_GOBLIN_DEN := Vector2i(
+		ROOM_X_LEFT + int(ROOM_WIDTH / 2.0) + CHEST_OFFSET.x,
+		ROOM_Y_BOTTOM + int(ROOM_HEIGHT / 2.0) + CHEST_OFFSET.y)
+const CHEST_MIMIC_DEN := Vector2i(
+		ROOM_X_MIDDLE + int(ROOM_WIDTH / 2.0) + CHEST_OFFSET.x,
+		ROOM_Y_BOTTOM + int(ROOM_HEIGHT / 2.0) + CHEST_OFFSET.y)
+const BOSS_CHEST_MARGIN := 4
+const FINAL_CHEST := Vector2i(BOSS_ROOM_X + BOSS_ROOM_WIDTH - BOSS_CHEST_MARGIN,
+		BOSS_ROOM_Y + int(BOSS_ROOM_HEIGHT / 2.0))
+const CHEST_BY_ROOM := {
+	"crypt": CHEST_CRYPT,
+	"forge": CHEST_FORGE,
+	"vault": CHEST_VAULT,
+	"goblin_den": CHEST_GOBLIN_DEN,
+	"mimic_den": CHEST_MIMIC_DEN,
+	"bone_hall": FINAL_CHEST,
+}
+# One chest per reward room plus one in the spawn hall; loot behavior is unchanged.
 const CHESTS: Array[Vector2i] = [
-	Vector2i(8, 26),    # hall
-	Vector2i(25, 10),   # crypt
-	Vector2i(38, 10),   # forge
-	Vector2i(30, 26),   # vault
-	# Appended rooms. Not every new room gets one on purpose: eye_well is the
-	# empty reward room and is meant to be worth the walk for the monsters alone.
-	Vector2i(25, 37),   # goblin_den
-	Vector2i(14, 37),   # mimic_den
-	Vector2i(4, 36),    # bone_hall
+	CHEST_HALL,
+	CHEST_CRYPT,
+	CHEST_FORGE,
+	CHEST_VAULT,
+	# eye_well stays the empty reward room.
+	CHEST_GOBLIN_DEN,
+	CHEST_MIMIC_DEN,
+	FINAL_CHEST,
 ]
-const POTS: Array[Vector2i] = [Vector2i(6, 7), Vector2i(7, 7), Vector2i(6, 8)]
-const CRATES: Array[Vector2i] = [Vector2i(35, 7), Vector2i(36, 7), Vector2i(35, 8)]
+const POTS: Array[Vector2i] = [
+	Vector2i(ROOM_X_MIDDLE + 2, ROOM_Y_TOP + 2),
+	Vector2i(ROOM_X_MIDDLE + 3, ROOM_Y_TOP + 2),
+	Vector2i(ROOM_X_MIDDLE + 2, ROOM_Y_TOP + 3),
+]
+const CRATES: Array[Vector2i] = [
+	Vector2i(ROOM_X_RIGHT + 2, ROOM_Y_MIDDLE + 2),
+	Vector2i(ROOM_X_RIGHT + 3, ROOM_Y_MIDDLE + 2),
+	Vector2i(ROOM_X_RIGHT + 2, ROOM_Y_MIDDLE + 3),
+]
 
-# Spike traps. They never block: each is a slow field the player has to cross,
-# so a trapped corridor costs time instead of ending a run. Full-width strips
-# span the corridor and have to be crossed slowly; the staggered pairs sit in
-# the middle and can be stepped around if you spot them in time.
-#
-# Nothing here sits in the removed forge->vault stair: that whole hallway went
-# with the corridor, so its strip went too.
-# EVERY trap lives in room floor, at least 3 cells (Chebyshev) from ANY
-# corridor cell, and never inside a corridor at all.
-#
-# This overrides two earlier rules on purpose.
-#
-# 1. The "a full-width strip across the corridor is the point of it" rule.
-#    The west stair and the forge link are 3 cells wide, so a strip down
-#    the middle row left exactly one free lane on each side - and the
-#    lane beside the cap was 1 tile of true standing room. That is a
-#    squeeze, not a hazard you can read and step around. Traps are now
-#    room floor, where there is floor to step around them on.
-# 2. "Do not move the original props." The corridor strips were the
-#    original traps, so this move is the deliberate exception.
-#
-# MIN_CORRIDOR, ROOMS and CORRIDORS are untouched.
-#
-# Old -> new, so the move is auditable:
-#   (8,17) (9,17) (10,17)   west stair strip  -> hall
-#   (15,9)  (16,9)          cistern link      -> cistern
-#   (30,8)  (30,9) (30,10)  forge link        -> crypt
-#   (17,25) (20,25)         hall-vault link   -> vault
-#   (33,35)                  eye_well          -> eye_well
-#   (22,35) (26,35) (23,38)  goblin_den        -> goblin_den
-		# (23,33) then moved again to (25,35): y=33 is the room's first floor row,
-		# so it sat 1 cell under the top wall band and failed the 24px wall rule.
-#   (11,34)                  mimic_den         -> mimic_den
+# Room-floor traps slow the player without blocking a narrow corridor. Their
+# positions follow the room grid so resizing or moving a row does not strand
+# them in rock or in a passage.
 const TRAPS: Array[Vector2i] = [
-	Vector2i(5, 24), Vector2i(6, 24), Vector2i(7, 24),    # hall
-	Vector2i(7, 9), Vector2i(8, 9),                      # cistern
-	Vector2i(21, 7), Vector2i(22, 7), Vector2i(21, 8),    # crypt
-	Vector2i(24, 24), Vector2i(25, 24),                  # vault
-	Vector2i(34, 35), Vector2i(36, 38),                   # eye_well
-	Vector2i(25, 35), Vector2i(24, 35), Vector2i(25, 34),  # goblin_den
-	Vector2i(14, 34), Vector2i(15, 35),                   # mimic_den
+	Vector2i(ROOM_X_LEFT + 1, ROOM_Y_TOP + 5),
+	Vector2i(ROOM_X_LEFT + 2, ROOM_Y_TOP + 5),
+	Vector2i(ROOM_X_LEFT + 3, ROOM_Y_TOP + 5), # hall
+	Vector2i(ROOM_X_MIDDLE + 5, ROOM_Y_TOP + 5),
+	Vector2i(ROOM_X_MIDDLE + 6, ROOM_Y_TOP + 5), # cistern
+	Vector2i(ROOM_X_RIGHT + 2, ROOM_Y_TOP + 5),
+	Vector2i(ROOM_X_RIGHT + 3, ROOM_Y_TOP + 5),
+	Vector2i(ROOM_X_RIGHT + 2, ROOM_Y_TOP + 6), # crypt
+	Vector2i(ROOM_X_MIDDLE + 2, ROOM_Y_MIDDLE + 5),
+	Vector2i(ROOM_X_MIDDLE + 3, ROOM_Y_MIDDLE + 5), # vault
+	Vector2i(ROOM_X_LEFT + 2, ROOM_Y_MIDDLE + 2),
+	Vector2i(ROOM_X_LEFT + 4, ROOM_Y_MIDDLE + 5), # eye_well
+	Vector2i(ROOM_X_LEFT + 2, ROOM_Y_BOTTOM + 2),
+	Vector2i(ROOM_X_LEFT + 3, ROOM_Y_BOTTOM + 2),
+	Vector2i(ROOM_X_LEFT + 4, ROOM_Y_BOTTOM + 2), # goblin_den
+	Vector2i(ROOM_X_MIDDLE + 2, ROOM_Y_BOTTOM + 2),
+	Vector2i(ROOM_X_MIDDLE + 3, ROOM_Y_BOTTOM + 3), # mimic_den
 ]
 
 const TP_FRAMES := 14
@@ -492,8 +509,6 @@ var _choice := ""
 ## has the same cursed chest and the next floor moves it.
 var _cursed_cell := Vector2i(-1, -1)
 func _ready() -> void:
-	# A run gets one seed; every floor derives its own from seed+depth, so
-	# descending reshuffles the spawn scatter and the head counts.
 	# Looked up through the tree, not by identifier: tools preload this script
 	# outside the running game, where autoload names do not resolve.
 	var state := get_node_or_null("/root/GameState")
@@ -507,7 +522,6 @@ func _ready() -> void:
 	var depth := 1
 	if state != null:
 		depth = int(state.get("depth"))
-	SPAWNER.set_floor(run_seed, depth)
 	# One chest per floor bites. The pick is seeded from the floor, so the same
 	# floor always has the same cursed chest and descending moves the curse.
 	_cursed_cell = _pick_cursed_chest(run_seed, depth)
@@ -573,7 +587,6 @@ func _ready() -> void:
 	_place_border(self)
 	_place_traps(layers["hazards"], _grid)
 	_place_torches(layers["props"], _grid)
-	_place_shaft_lights(layers["props"], _grid)
 	_place_props(layers["props"], _grid)
 	_place_player_start()
 	_place_enemy_spawns()
@@ -623,6 +636,10 @@ func _cell_centre(cell: Vector2i) -> Vector2:
 	return Vector2(cell.x * GRID + GRID * 0.5, cell.y * GRID + GRID * 0.5)
 
 
+func _room_world_centre(rect: Rect2i) -> Vector2:
+	return Vector2(rect.position) * GRID + Vector2(rect.size) * GRID * 0.5
+
+
 func _in_corridor(cell: Vector2i) -> bool:
 	for c in CORRIDORS:
 		if c.has_point(cell):
@@ -668,6 +685,29 @@ func _validate(grid: Array) -> Array[String]:
 		problems.append("spawn %s is inside solid rock" % spawn)
 		return problems
 
+	# Room sizes and margins are part of the layout contract; catch accidental
+	# per-room shrinking or a boss room pushed beyond its reserved map bounds.
+	for room_name in ROOMS:
+		var room: Rect2i = ROOMS[room_name]
+		var expected_size := Vector2i(BOSS_ROOM_WIDTH, BOSS_ROOM_HEIGHT) \
+				if room_name == "bone_hall" else Vector2i(ROOM_WIDTH, ROOM_HEIGHT)
+		if room.size != expected_size:
+			problems.append("room '%s' has size %s, expected %s"
+					% [room_name, room.size, expected_size])
+		if room.position.x < ROOM_MARGIN or room.position.y < ROOM_MARGIN \
+				or room.end.x > MAP_W - ROOM_MARGIN \
+				or room.end.y > MAP_H - ROOM_MARGIN:
+			problems.append("room '%s' at %s exceeds the reserved map bounds"
+					% [room_name, room])
+	var room_names: Array = ROOMS.keys()
+	for i in range(room_names.size()):
+		var first: Rect2i = ROOMS[room_names[i]]
+		for j in range(i + 1, room_names.size()):
+			var second: Rect2i = ROOMS[room_names[j]]
+			if first.intersects(second):
+				problems.append("rooms '%s' and '%s' overlap"
+						% [room_names[i], room_names[j]])
+
 	# 1. Every room must be reachable, and so must every walkable cell, or the
 	#    player could end up in a sealed pocket with no way out.
 	var reach := _flood(grid, spawn)
@@ -688,6 +728,10 @@ func _validate(grid: Array) -> Array[String]:
 	#    the player wedges sideways in them and can never turn around.
 	for i in CORRIDORS.size():
 		var c: Rect2i = CORRIDORS[i]
+		var horizontal := c.size == Vector2i(CORRIDOR_LENGTH, CORRIDOR_WIDTH)
+		var vertical := c.size == Vector2i(CORRIDOR_WIDTH, CORRIDOR_LENGTH)
+		if not horizontal and not vertical:
+			problems.append("corridor %d %s does not match the fixed dimensions" % [i, c])
 		if mini(c.size.x, c.size.y) < MIN_CORRIDOR:
 			problems.append("corridor %d %s is only %d cells wide" % [
 				i, c, mini(c.size.x, c.size.y)])
@@ -1181,28 +1225,6 @@ func _place_torches(props: Node2D, grid: Array) -> void:
 		props.add_child(_make_torch(cell))
 
 
-## The two fixed lights for the south shaft.
-##
-## These go through _make_torch, not through the generated _build_torches pass, so
-## they carry the identical soft cyan PointLight2D every other light in the
-## dungeon has. They bypass _torch_ok on purpose - that check rejects corridor
-## cells so a torch can never pinch a doorway, and this shaft has no doorways to
-## pinch, only 20 cells of tunnel.
-##
-## Each one is still re-checked against walkability and against the trap list
-## here rather than trusted: a listed light that landed on a trap or on rock
-## would silently become a light in a wall.
-func _place_shaft_lights(props: Node2D, grid: Array) -> void:
-	for cell in SHAFT_LIGHTS:
-		if not _walkable(grid, cell):
-			push_error("shaft light at %s is not on walkable floor" % cell)
-			continue
-		if TRAPS.has(cell):
-			push_error("shaft light at %s sits on a trap" % cell)
-			continue
-		props.add_child(_make_torch(cell))
-
-
 ## A torch at `cell`, with the dungeon's soft cyan light.
 func _make_torch(cell: Vector2i) -> Node2D:
 	var node := Node2D.new()
@@ -1260,10 +1282,8 @@ func _place_traps(hazards: Node2D, grid: Array) -> void:
 			hazards.add_child(_make_trap(cell))
 
 
-## A Marker2D at the centre of every hall, so enemy spawning has somewhere to
-## aim. The markers are positions only - no enemies are spawned yet.
-## Populates EnemySpawns: one Marker2D per enemy, and one trigger per monster
-## room.
+## Populates EnemySpawns with one Marker2D and one enemy per populated room,
+## plus one trigger per regular monster room.
 ##
 ## The markers are the dungeon builder's single source of truth for placement,
 ## which is what lets check_layout.gd assert the spawn rules without having to
@@ -1296,28 +1316,39 @@ func _place_enemy_spawns() -> void:
 		var cells := SPAWNER.plan(func(c: Vector2i) -> bool:
 				return _walkable(_grid, c), ROOMS[room_name], room_name,
 				blocked, start)
-		for i in cells.size():
-			var marker := Marker2D.new()
-			var cell: Vector2i = cells[i]
-			marker.name = "Spawn_%s_%d_%d" % [room_name, cell.x, cell.y]
-			marker.position = _cell_centre(cell)
-			spawns.add_child(marker)
-			# The bone hall's LAST skeleton is the boss, marked by position in the
-			# room rather than by name so the flag cannot drift from the spawn.
-			var is_boss: bool = room_name == "bone_hall" and i == cells.size() - 1
-			var enemy := SPAWNER.make_enemy(key, _cell_centre(cell), room_name,
-					null, is_boss)
-			if is_boss:
-				enemy.name = "Enemy_%s_%d_%d_boss" % [room_name, cell.x, cell.y]
-				_mark_boss_room(room_name)
-			spawns.add_child(enemy)
+		if cells.size() != SPAWNER.ENEMIES_PER_ROOM:
+			push_error("Room %s planned %d enemies; expected exactly one"
+					% [room_name, cells.size()])
+			continue
+		var cell: Vector2i = cells[0]
+		var spawn_position := _room_world_centre(ROOMS[room_name])
+		var marker := Marker2D.new()
+		marker.name = "Spawn_%s_%d_%d" % [room_name, cell.x, cell.y]
+		marker.position = spawn_position
+		spawns.add_child(marker)
+		var is_boss: bool = room_name == "bone_hall"
+		var enemy := SPAWNER.make_enemy(key, spawn_position, room_name,
+				null, is_boss)
+		if is_boss:
+			enemy.name = "Enemy_%s_%d_%d_boss" % [room_name, cell.x, cell.y]
+			_mark_boss_room(room_name)
+		spawns.add_child(enemy)
 		triggers.add_child(SPAWNER.make_trigger(ROOMS[room_name], room_name))
-		print("spawn %-11s %-12s %d enemy/enemies%s"
-				% [room_name, key, cells.size(),
-				" (last is the boss)" if room_name == "bone_hall" else ""])
+		var chest_cell: Vector2i = CHEST_BY_ROOM.get(
+				room_name, Vector2i(-1, -1))
+		var chest_report := "none"
+		if chest_cell.x >= 0:
+			var clearance := _enemy_chest_clearance_px(enemy, chest_cell)
+			chest_report = "%s (%.1fpx clear)" % [str(chest_cell), clearance]
+			if clearance < CHEST_ENEMY_CLEARANCE:
+				push_error("%s chest clearance is %.1fpx; need %.1fpx"
+						% [room_name, clearance, CHEST_ENEMY_CLEARANCE])
+		print("spawn %-11s species=%-12s entities=1 sprites=%d scale=%.2f chest=%s"
+				% [room_name, key, int(enemy.get("_sprite_count")),
+				float(enemy.get("_scale")), chest_report])
 # --- Node factories --------------------------------------------------------
 
-## Lays out the dormant Mimics, beside their chests and against a wall.
+## Places one dormant Mimic at the centre of its room.
 ##
 ## They are parented to the SAME Props node the chests live in, which is what
 ## makes them sort and light identically: Props carries the z_index, and a
@@ -1333,13 +1364,16 @@ func _place_mimics(_spawns: Node2D) -> void:
 	var start := _room_centre(ROOM_HALL)
 	for room_name in SPAWNER.MIMIC_DENS:
 		var spec: Dictionary = SPAWNER.MIMIC_DENS[room_name]
-		var chest: Vector2i = spec["chest"]
 		var want: int = int(spec["count"])
-		var cells := SPAWNER.plan_mimic(walkable, ROOMS[room_name], chest,
-				want, blocked, start)
+		var cells := SPAWNER.plan_mimic(walkable, ROOMS[room_name],
+				blocked, start)
+		if cells.size() != want:
+			push_error("Room %s planned %d Mimics; expected exactly %d"
+					% [room_name, cells.size(), want])
+			continue
 		for i in cells.size():
 			var cell: Vector2i = cells[i]
-			var m := SPAWNER.make_mimic(_cell_centre(cell), room_name,
+			var m := SPAWNER.make_mimic(_room_world_centre(ROOMS[room_name]), room_name,
 					"Cell_%d_%d" % [cell.x, cell.y])
 			props.add_child(m)
 			# Belt and braces: the spawner already leaves these unset, but a
@@ -1347,21 +1381,51 @@ func _place_mimics(_spawns: Node2D) -> void:
 			# disguise away the instant the player walks behind it.
 			m.z_index = 0
 			m.y_sort_enabled = false
-		print("spawn %-11s MIMIC         %d/%d dormant (chest %s, clearance %.1fpx)"
-				% [room_name, cells.size(), want, chest,
-				SPAWNER.mimic_wall_clearance_px()])
+			var chest_cell: Vector2i = CHEST_BY_ROOM[room_name]
+			var clearance := _enemy_chest_clearance_px(m, chest_cell)
+			if clearance < CHEST_ENEMY_CLEARANCE:
+				push_error("%s Mimic chest clearance is %.1fpx; need %.1fpx"
+						% [room_name, clearance, CHEST_ENEMY_CLEARANCE])
+			print("spawn %-11s species=MIMIC       entities=1 sprites=%d scale=%.2f chest=%s (%.1fpx clear)"
+					% [room_name, int(m.get("_sprite_count")),
+					float(m.get("_scale")),
+					str(chest_cell), clearance])
 
 
-## The cells a spawn must avoid: traps, chests and crates.
-##
-## Read from the const lists, not by walking the tree. The tree version picked up
-## torches and pots too, and torches are wall decoration with no collider - they
-## were reserving floor that could never be used.
+func _enemy_chest_clearance_px(enemy: Node2D, chest_cell: Vector2i) -> float:
+	var shape_node := enemy.get_node("InteractionArea/CollisionShape2D") \
+			as CollisionShape2D
+	var shape := shape_node.shape
+	var area_center := enemy.position + shape_node.position
+	var chest_center := _cell_centre(chest_cell)
+	var delta := (chest_center - area_center).abs()
+	var chest_half := CHEST_VISIBLE_SIZE * 0.5
+	var clearance := 0.0
+	if shape is RectangleShape2D:
+		var half := (shape as RectangleShape2D).size * 0.5
+		var gap := Vector2(maxf(delta.x - half.x - chest_half.x, 0.0),
+				maxf(delta.y - half.y - chest_half.y, 0.0))
+		clearance = gap.length()
+	elif shape is CircleShape2D:
+		var nearest := Vector2(maxf(delta.x - chest_half.x, 0.0),
+				maxf(delta.y - chest_half.y, 0.0))
+		clearance = maxf(nearest.length() - (shape as CircleShape2D).radius,
+				0.0)
+	else:
+		push_error("%s has an unsupported interaction shape for clearance"
+				% enemy.name)
+	return clearance * SCALE
+
+
+## The cells a spawn must avoid: traps, props, and the deterministic torch plan.
+## Torches have no collider, but enemies still should not cover their light.
 func _blocked_cells() -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	out.append_array(TRAPS)
 	out.append_array(CHESTS)
+	out.append_array(POTS)
 	out.append_array(CRATES)
+	out.append_array(_build_torches(_grid))
 	SPAWNER.set_props(out)
 	return out
 
@@ -1411,10 +1475,6 @@ func _room_candidates(grid: Array, room: Rect2i) -> Array:
 			if bool(walkable.call(c)):
 				out.append(c)
 	return out
-
-
-## The single chest that ends the loop, in the furthest room.
-const FINAL_CHEST := Vector2i(4, 36)
 
 
 func _is_final_chest(cell: Vector2i) -> bool:

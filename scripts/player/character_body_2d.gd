@@ -185,7 +185,8 @@ func _ready():
 	# chests and traps it always did. Only the label on the body changed.
 	collision_layer = Layers.PLAYER
 	collision_mask = Layers.player_mask()
-	# The slash listens for enemy hurtboxes only. It is off almost all the time.
+	# The slash listens for enemy interaction areas and starts duels; it never
+	# applies overworld damage.
 	attack_area.collision_layer = Layers.PLAYER_HITBOX
 	attack_area.collision_mask = Layers.player_hitbox_mask()
 

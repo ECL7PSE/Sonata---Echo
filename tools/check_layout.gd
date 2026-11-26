@@ -13,6 +13,7 @@ extends SceneTree
 
 const BUILDER := preload("res://scripts/world/dungeon_builder.gd")
 const SPAWNER := preload("res://scripts/enemies/enemy_spawner.gd")
+const ENEMY_SCRIPT := preload("res://scripts/enemies/enemy.gd")
 const monster_db_preload := preload("res://scripts/enemies/monster_db.gd")
 ## Test hook. Set to a room name to drop that room's spawns before checking, so
 ## the "a room may not ship empty" assertion can be proved to fire instead of
@@ -60,29 +61,24 @@ func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
 			print("  %-11s %-12s %d (expected 0, no trigger)"
 					% [room_name, "-", cells.size()])
 			continue
-		var target := SPAWNER.enemy_count(builder.ROOMS[room_name], room_name)
-		if cells.size() < SPAWNER.MIN_ENEMY:
-			_fail("room %s placed %d of %d %s - a room may not ship empty. "
-					% [room_name, cells.size(), target, key]
+		var target := SPAWNER.ENEMIES_PER_ROOM
+		if cells.size() != target:
+			_fail("room %s placed %d %s entities, expected exactly one. "
+					% [room_name, cells.size(), key]
 					+ "candidates=%s blocked=%s"
 					% [str(builder._room_candidates(grid, builder.ROOMS[room_name])),
 					str(SPAWNER.props())])
-		if cells.size() > SPAWNER.MAX_ENEMY:
-			_fail("room %s placed %d enemies, over the cap of %d"
-					% [room_name, cells.size(), SPAWNER.MAX_ENEMY])
-		# A named override is a deliberate design decision, so it is asserted
-		# exactly rather than allowed to drift within the 2..6 band.
-		if SPAWNER.COUNT_OVERRIDE.has(room_name):
-			var want_exact: int = SPAWNER.COUNT_OVERRIDE[room_name]
-			if cells.size() != want_exact:
-				_fail("room %s is pinned to exactly %d enemies but placed %d"
-						% [room_name, want_exact, cells.size()])
 		if not seen_species.has(key):
 			seen_species.append(key)
 
 		# Per-spawn rules.
 		for entry in cells:
 			var cell: Vector2i = entry["cell"]
+			var centre: Vector2i = SPAWNER.room_center_cell(
+					builder.ROOMS[room_name])
+			if cell != centre:
+				_fail("spawn %s at %s is not at room centre %s"
+						% [room_name, cell, centre])
 			if not bool(walkable.call(cell)):
 				_fail("spawn %s at %s is not floor" % [room_name, cell])
 			var wall := SPAWNER.wall_clearance_px(walkable, cell)
@@ -101,14 +97,6 @@ func _check_enemy_spawns(builder: Node2D, grid: Array) -> void:
 					< SPAWNER.SPAWN_CLEARANCE_PX:
 				_fail("spawn %s at %s is within %.0fpx of PlayerStart"
 						% [room_name, cell, SPAWNER.SPAWN_CLEARANCE_PX])
-		# No two spawns on top of each other.
-		for i in cells.size():
-			for j in range(i + 1, cells.size()):
-				var a: Vector2i = cells[i]["cell"]
-				var b: Vector2i = cells[j]["cell"]
-				if Vector2(a - b).length() * 32.0 < 32.0:
-					_fail("spawns %s at %s and %s overlap"
-							% [room_name, a, b])
 		print("  %-11s %-12s %d/%d" % [room_name, key, cells.size(), target])
 
 	for want in ["RAT", "SLIME", "BAT", "MUSHROOM", "FLYING_EYE", "GOBLIN",
@@ -136,7 +124,7 @@ func _check_mimic_placement(builder: Node2D, grid: Array) -> void:
 	for room_name in SPAWNER.MIMIC_DENS:
 		var spec: Dictionary = SPAWNER.MIMIC_DENS[room_name]
 		var want: int = int(spec["count"])
-		var chest: Vector2i = spec["chest"]
+		var chest: Vector2i = builder.CHEST_BY_ROOM[room_name]
 		var found: Array[Node] = []
 		if props != null:
 			for child in props.get_children():
@@ -148,6 +136,8 @@ func _check_mimic_placement(builder: Node2D, grid: Array) -> void:
 		var half := SPAWNER.awake_half_width() / SPAWNER.SCREEN_PX_PER_TILE
 		var height := float(monster_db_preload.MIMIC["body"].y) \
 				* float(monster_db_preload.MIMIC["scale"]) \
+				* float(ENEMY_SCRIPT.SCALE_BY_SPRITE_COUNT[1]) \
+				* float(monster_db_preload.DUNGEON_SCALE) \
 				/ SPAWNER.SCREEN_PX_PER_TILE
 		for m in found:
 			_ok(m.get_script() == mimic_script,
@@ -166,18 +156,21 @@ func _check_mimic_placement(builder: Node2D, grid: Array) -> void:
 					int(floor(m.position.y / 16.0)))
 			_ok(builder.ROOMS[room_name].has_point(cell),
 				"%s is outside its room at %s" % [m.name, cell])
-			_ok(Vector2(cell - chest).length() <= SPAWNER.MIMIC_NEAR_TILES,
-				"%s at %s is %.1f tiles from its chest, max %d"
-						% [m.name, cell,
-						Vector2(cell - chest).length(), SPAWNER.MIMIC_NEAR_TILES])
-			_ok(Vector2(cell - chest).length() * 32.0 >= 32.0,
-				"%s is on top of its chest at %s" % [m.name, cell])
+			var centre: Vector2i = SPAWNER.room_center_cell(
+					builder.ROOMS[room_name])
+			_ok(cell == centre,
+				"%s at %s is not at room centre %s" % [m.name, cell, centre])
+			var clearance: float = builder._enemy_chest_clearance_px(m, chest)
+			_ok(clearance >= builder.CHEST_ENEMY_CLEARANCE,
+				"%s chest clearance is %.1fpx, need %.1fpx"
+						% [m.name, clearance, builder.CHEST_ENEMY_CLEARANCE])
 			# Room for the awake body, measured against the grid.
-			var centre := Vector2(cell) + Vector2(0.5, 0.5)
-			var from := Vector2i(floori(centre.x - half),
-					floori(centre.y - height))
-			var to := Vector2i(floori(centre.x + half - 0.001),
-					floori(centre.y - 0.001))
+			var body_centre := Vector2(builder.ROOMS[room_name].position) \
+					+ Vector2(builder.ROOMS[room_name].size) * 0.5
+			var from := Vector2i(floori(body_centre.x - half),
+					floori(body_centre.y - height))
+			var to := Vector2i(floori(body_centre.x + half - 0.001),
+					floori(body_centre.y - 0.001))
 			var clear := true
 			for y in range(from.y, to.y + 1):
 				for x in range(from.x, to.x + 1):

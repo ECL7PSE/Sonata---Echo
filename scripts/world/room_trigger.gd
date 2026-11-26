@@ -3,9 +3,7 @@ extends Area2D
 ##
 ## Deliberately one-shot from the player's point of view but NOT toggling: the
 ## trigger fires on entry, calls activate() on its room's enemies, and that is
-## it. Whether an individual enemy later gives up is the leash's decision, in
-## enemy.gd - if the trigger switched enemies back off it would fight the leash
-## and the two would flap.
+## it. Activation enables interaction; it never starts enemy movement.
 
 ## The room this trigger guards. Set by EnemySpawner before the node is added.
 @export var room_name := ""

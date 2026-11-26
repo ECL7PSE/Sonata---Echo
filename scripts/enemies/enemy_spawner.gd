@@ -2,19 +2,12 @@ extends RefCounted
 class_name EnemySpawner
 ## Decides WHERE enemies stand, and builds the room trigger that wakes them.
 ##
-## Placement is generated from a fixed seed per room, so the dungeon is the same
-## every run and a spawn that clips a wall is caught by a test rather than by a
-## player discovering it. Nothing here reads randf(): an unseeded spawn is a bug.
+## Every populated room gets one enemy at its centre.
 ##
 ## The rules, and why each exists:
 ##
 ##   on floor              an enemy in a wall is invisible but still solid
-##   inset from walls>=1 tile clear of the band, comfortably over the 24px floor
-##   clear of traps        an enemy standing on spikes is being punished for the
-##                         spawn, not for a mistake it made
-##   clear of chests/torch both are props the player walks up to
-##   >150px from spawn     nobody should be hit before they have moved
-##   not overlapping       two enemies in one cell is one sprite and two hitboxes
+##   room centre           room size or floor index cannot scatter the spawn
 
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const ENEMY_SCRIPT := preload("res://scripts/enemies/enemy.gd")
@@ -35,28 +28,15 @@ const ROOM_MONSTER := {
 ## Rooms that must never hold an enemy, and must never get a trigger.
 const EMPTY_ROOMS: Array[String] = ["hall", "shaft"]
 
-## Tiles of clearance kept around every spawn.
+## Tiles kept between a room trigger and its doorways.
 const INSET := 1
-## One enemy per this many screen pixels of room width, then clamped.
-const PER_ENEMY_PX := 70.0
-const MIN_ENEMY := 2
-const MAX_ENEMY := 6
-## Screen pixels an enemy must sit from traps, chests and crates.
-##
-## Torches and pots are NOT in this list. Torches are wall-mounted decoration
-## with no collision, so "stay away from the torch" was reserving floor nothing
-## could ever occupy.
+const ENEMIES_PER_ROOM := 1
+## Screen-pixel spacing checked by the layout tests for nearby props.
 const PROP_CLEARANCE_PX := 32.0
 ## Screen pixels of clear floor between a spawn and the nearest wall.
 const WALL_CLEARANCE_PX := 24.0
 ## Screen pixels from the player's spawn.
 const SPAWN_CLEARANCE_PX := 150.0
-## Measured from the real chest: C001_01 is a 24x24 image with a 16x15 visible
-## chest, and it is drawn 1:1. Both figures come from measure_sheets.gd's own
-## pixel scan, not from this comment.
-const MIMIC_CHEST_W := 16
-const MIMIC_CHEST_H := 15
-
 ## Traps, chests and crates. Built once so the planner and check_layout read the
 ## same list.
 static var PROPS: Array[Vector2i] = []
@@ -64,84 +44,42 @@ static var PROPS: Array[Vector2i] = []
 const SCREEN_PX_PER_TILE := 32.0
 
 
-## Rooms that get dormant Mimics, and the real chest each one hides beside.
-##
-## The mimic is placed relative to a chest on purpose: a dormant mimic IS a
-## chest, so a player who has learned to loot this dungeon should be reading the
-## room as "three chests here", not "three enemies here".
+## Rooms that get one dormant Mimic instead of a regular room enemy.
 const MIMIC_DENS: Dictionary = {
-	"mimic_den": {"chest": Vector2i(14, 37), "count": 3},
-	"crypt": {"chest": Vector2i(25, 10), "count": 1},
+	"mimic_den": {"count": 1},
 }
-## How close to its chest a mimic may stand, in tiles. Four reads as a group.
-const MIMIC_NEAR_TILES := 4
 
 
-## The awake mimic's half-width, on screen, from monster_db.
+## The awake mimic's half-width in rendered pixels, including dungeon scaling.
 static func awake_half_width() -> float:
 	var body: Vector2i = DB.MIMIC.get("body", Vector2i(16, 15))
-	return float(body.x) * float(DB.MIMIC["scale"]) * 0.5
+	return float(body.x) * float(DB.MIMIC["scale"]) \
+			* float(ENEMY_SCRIPT.SCALE_BY_SPRITE_COUNT[1]) \
+			* float(DB.DUNGEON_SCALE) * 0.5
 
 
-## Wall clearance a mimic needs, computed rather than hardcoded.
-##
-## max(24px, awake half-width + 4px). The awake body is the binding constraint
-## and it is much bigger than the 16x15 chest it starts as: at scale 1.6 the
-## mimic is 67.2px wide, so a placement that only clears the 24px floor rule
-## would stand the creature's shoulder inside a wall the moment it wakes.
+## Wall clearance a mimic needs, computed from the scaled awake body.
+## The awake art is about 78px wide, so it needs more than the 24px floor rule.
 static func mimic_wall_clearance_px() -> float:
 	return maxf(WALL_CLEARANCE_PX, awake_half_width() + 4.0)
 
 
-## Picks `count` dormant-mimic cells hugging a wall beside `chest`.
-##
-## "Beside a chest and against a wall" is the whole disguise, so the wall
-## constraint is inverted from the normal spawn rule: instead of being pushed
-## away from walls, these MUST have one nearby, while still having enough clear
-## floor for the awake body. The cell is floor, all four neighbours are floor
-## (a corner is fine, a gap is not), and the body rectangle is checked cell by
-## cell.
-static func plan_mimic(walkable: Callable, room: Rect2i, chest: Vector2i,
-		count: int, blocked: Array[Vector2i],
+## Places the one dormant Mimic at the room centre, like every other enemy.
+static func plan_mimic(walkable: Callable, room: Rect2i,
+		blocked: Array[Vector2i],
 		player_start: Vector2i) -> Array[Vector2i]:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = room_seed("mimic_" + str(chest))
-	# Convert the awake body to TILES, which is the grid's unit.
+	var cell := room_center_cell(room)
+	if cell == player_start or blocked.has(cell) or not _fits(walkable, cell, room):
+		return []
+	# The dormant body must have room to grow into its final centred size.
 	var half_tiles := awake_half_width() / SCREEN_PX_PER_TILE
 	var height_tiles := float(DB.MIMIC.get("body", Vector2i(16, 15)).y) \
-			* float(DB.MIMIC["scale"]) / SCREEN_PX_PER_TILE
-	var out: Array[Vector2i] = []
-	for _attempt in 800:
-		if out.size() >= count:
-			break
-		var cell := chest + Vector2i(
-			rng.randi_range(-MIMIC_NEAR_TILES, MIMIC_NEAR_TILES),
-			rng.randi_range(-MIMIC_NEAR_TILES, MIMIC_NEAR_TILES))
-		if not room.has_point(cell):
-			continue
-		if Vector2(cell - chest).length() > MIMIC_NEAR_TILES:
-			continue
-		if not bool(walkable.call(cell)):
-			continue
-		# Near a wall: at least one orthogonal neighbour is not floor.
-		var against := false
-		for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-			if not bool(walkable.call(cell + d)):
-				against = true
-		if not against:
-			continue
-		# But the AWAKE body must still fit, measured against the grid rather
-		# than assumed from the clearance number.
-		if not _body_fits(walkable, cell, half_tiles, height_tiles):
-			continue
-		if _screen_distance(cell, player_start) < SPAWN_CLEARANCE_PX:
-			continue
-		if _near_any(cell, blocked, PROP_CLEARANCE_PX):
-			continue
-		if _near_any(cell, out, SCREEN_PX_PER_TILE):
-			continue
-		out.append(cell)
-	return out
+			* float(DB.MIMIC["scale"]) \
+			* float(ENEMY_SCRIPT.SCALE_BY_SPRITE_COUNT[1]) \
+			* float(DB.DUNGEON_SCALE) / SCREEN_PX_PER_TILE
+	if not _body_fits(walkable, cell, half_tiles, height_tiles):
+		return []
+	return [cell]
 
 
 ## True when the awake body rectangle standing on `cell` covers only floor.
@@ -149,10 +87,8 @@ static func plan_mimic(walkable: Callable, room: Rect2i, chest: Vector2i,
 ## The node origin is the body's bottom-centre, so the rect runs from
 ## (centre - half, centre - height) to (centre + half, centre).
 ##
-## The halves arrive in TILES, not pixels. The grid is indexed by cell and the
-## first version passed the awake half-width (33.6px) straight into a tile
-## space, so the rect spanned 67 TILES and could never fit - which is why both
-## rooms silently placed zero mimics while the run still went green.
+## The halves arrive in TILES, not pixels. The grid is indexed by cell, so
+## converting the scaled pixel bounds here keeps the awake body inside the room.
 static func _body_fits(walkable: Callable, cell: Vector2i, half: float,
 		height: float) -> bool:
 	var centre := Vector2(cell) + Vector2(0.5, 0.5)
@@ -178,19 +114,6 @@ static func props() -> Array[Vector2i]:
 	return PROPS
 
 
-## Which floor is being built, mixed into every draw below.
-##
-## The dungeon sets this once from the run seed and the depth, so descending
-## reshuffles spawn positions and head counts without touching the room plan.
-## Tools that never run a dungeon keep the default, and they compute their
-## expectations through these same functions, so both sides always agree.
-static var floor_seed := 1
-
-
-static func set_floor(seed_value: int, depth: int) -> void:
-	floor_seed = (int(hash([seed_value, depth])) & 0x7FFFFFFF) | 1
-
-
 static func monster_key(room_name: String) -> String:
 	return ROOM_MONSTER.get(room_name, "")
 
@@ -199,96 +122,22 @@ static func is_enemy_room(room_name: String) -> bool:
 	return ROOM_MONSTER.has(room_name)
 
 
-## Per-room count overrides, where the width rule would disagree with a
-## deliberate design decision.
-##
-## bone_hall is 6 tiles wide, which the width rule rounds to 3. The room is
-## meant to hold 2 skeletons, one of them the boss, so the override caps it. The
-## override is NAMED and lives here rather than as a magic number at the call
-## site, and check_layout asserts the exact figure so a cap cannot silently drift
-## into "however many fit".
-const COUNT_OVERRIDE := {
-	"bone_hall": 2,
-}
+static func enemy_count(_room: Rect2i, _room_name: String = "") -> int:
+	return ENEMIES_PER_ROOM
 
 
-## How many enemies a room holds: one per ~70px of width, floored and capped.
-##
-## Width, not area, because a long thin corridor fights very differently from a
-## square room with the same floor count.
-static func enemy_count(room: Rect2i, room_name: String = "") -> int:
-	if room_name != "" and COUNT_OVERRIDE.has(room_name):
-		return int(COUNT_OVERRIDE[room_name])
-	var px := float(room.size.x) * SCREEN_PX_PER_TILE
-	var n := clampi(int(round(px / PER_ENEMY_PX)), MIN_ENEMY, MAX_ENEMY)
-	# One more or one fewer head than the width rule says, rolled per floor.
-	var rng := RandomNumberGenerator.new()
-	rng.seed = room_seed(room_name + "#heads")
-	return clampi(n + rng.randi_range(-1, 1), MIN_ENEMY, MAX_ENEMY)
+static func room_center_cell(room: Rect2i) -> Vector2i:
+	return room.position + Vector2i(int(room.size.x / 2.0),
+			int(room.size.y / 2.0))
 
 
-## A stable seed per room. Named, not hashed, so the same room always lays out
-## the same way even if Godot changes its string hash between versions.
-##
-## The mixing step is not decoration. A raw FNV-style hash handed straight to
-## RandomNumberGenerator produced a DEGENERATE stream for "eye_well": the first
-## randi_range call returned the same value 600 times, so every candidate cell
-## was identical and the room spawned zero enemies. Feeding the seed through a
-## 32-bit finaliser and discarding one draw makes every room lay out properly.
-static func room_seed(room_name: String) -> int:
-	var h := 2166136261
-	for i in room_name.length():
-		h = (h ^ room_name.unicode_at(i)) & 0xFFFFFFFF
-		h = (h * 16777619) & 0xFFFFFFFF
-	# Finaliser (murmur3-style), then keep it positive and odd.
-	h = (h ^ (h >> 16)) & 0xFFFFFFFF
-	h = (h * 0x85EBCA6B) & 0xFFFFFFFF
-	h = (h ^ (h >> 13)) & 0xFFFFFFFF
-	h = (h * 0xC2B2AE35) & 0xFFFFFFFF
-	h = (h ^ (h >> 16)) & 0xFFFFFFFF
-	return (h ^ floor_seed) | 1
-
-
-## The cells enemies occupy, in order. `blocked` holds traps, chests and torches;
-## `walkable` is the builder's OWN test, passed in rather than reimplemented.
-##
-## Taking it as a Callable is deliberate: the spawner used to index the grid
-## itself and silently produced ZERO enemies for every room, because its idea of
-## the grid layout did not match the builder's. One test, owned by one file.
-static func plan(walkable: Callable, room: Rect2i, room_name: String,
-		blocked: Array[Vector2i], player_start: Vector2i) -> Array[Vector2i]:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = room_seed(room_name)
-	# Discard the first draw: the initial state of a freshly seeded PCG can still
-	# correlate with the seed, and one throwaway draw is cheap insurance.
-	rng.randi()
-	var want := enemy_count(room, room_name)
-	var out: Array[Vector2i] = []
-	var why := {"room": 0, "blocked": 0, "spawnfar": 0, "overlap": 0}
-	# Bounded so a rule change that makes placement impossible fails the test
-	# instead of hanging the build.
-	for _attempt in 600:
-		if out.size() >= want:
-			break
-		var cell := room.position + Vector2i(
-			rng.randi_range(INSET, room.size.x - 1 - INSET),
-			rng.randi_range(INSET, room.size.y - 1 - INSET))
-		if not _fits(walkable, cell, room):
-			why["room"] += 1
-			continue
-		if _near_any(cell, blocked, PROP_CLEARANCE_PX):
-			why["blocked"] += 1
-			continue
-		if _screen_distance(cell, player_start) < SPAWN_CLEARANCE_PX:
-			why["spawnfar"] += 1
-			continue
-		if _near_any(cell, out, SCREEN_PX_PER_TILE):
-			why["overlap"] += 1
-			continue
-		out.append(cell)
-	print("   plan %-11s want=%d got=%d rejected %s"
-			% [room_name, want, out.size(), str(why)])
-	return out
+## One centre cell per populated room; `walkable` remains owned by the builder.
+static func plan(walkable: Callable, room: Rect2i, _room_name: String,
+		blocked: Array[Vector2i], _player_start: Vector2i) -> Array[Vector2i]:
+	var center := room_center_cell(room)
+	if not _fits(walkable, center, room) or blocked.has(center):
+		return []
+	return [center]
 
 
 ## Is this cell floor, with the given clearance from the nearest wall?
@@ -325,24 +174,6 @@ static func wall_clearance_px(walkable: Callable, cell: Vector2i) -> float:
 		if not on_ring:
 			break
 	return 4.0 * SCREEN_PX_PER_TILE
-
-
-## True when `cell` is within `min_px` of anything in `others`.
-##
-## Name and return value agree on purpose. It was originally inverted - returning
-## true when FAR - and because the call sites read "if near: skip", every
-## candidate was rejected as overlapping and every room spawned zero enemies.
-static func _near_any(cell: Vector2i, others: Array, min_px: float) -> bool:
-	var tiles := min_px / SCREEN_PX_PER_TILE
-	for o in others:
-		var other := o as Vector2i
-		if absi(other.x - cell.x) <= tiles and absi(other.y - cell.y) <= tiles:
-			return true
-	return false
-
-
-static func _screen_distance(a: Vector2i, b: Vector2i) -> float:
-	return Vector2(a - b).length() * SCREEN_PX_PER_TILE
 
 
 static func _walkable(grid: Array, cell: Vector2i) -> bool:
@@ -396,9 +227,8 @@ static func make_enemy(key: String, cell_centre: Vector2, room_name: String,
 ## The Area2D that wakes a room.
 ##
 ## It covers the room's walkable interior, inset by the same INSET as the spawns,
-## so walking into a doorway does not start the fight before the player is
-## actually in the room. Once a room is woken it stays woken: the trigger does
-## not toggle, the leash decides when an enemy gives up.
+## so walking into a doorway does not wake enemies before the player is actually
+## in the room. Activation never moves the stationary enemies.
 static func make_trigger(room: Rect2i, room_name: String) -> Area2D:
 	var area := Area2D.new()
 	area.name = "Trigger_%s" % room_name
